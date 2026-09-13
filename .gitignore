@@ -1,0 +1,14 @@
+/node_modules
+/dist
+/coverage
+.env
+.env.dev
+.env.prod
+.env.local
+*.log
+.DS_Store
+.yarn/*
+!.yarn/patches
+!.yarn/releases
+.tsbuildinfo
+*.tsbuildinfo

@@ -8,9 +8,12 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
 import { AuthenticationModule } from '@packages/authentication';
 import { BusinessesModule } from '@packages/businesses';
+import { CampaignsModule } from '@packages/campaigns';
+import { FeedbackModule } from '@packages/feedback';
 import { GoogleModule } from '@packages/google';
 import { HealthModule } from '@packages/health';
 import { LocationsModule } from '@packages/locations';
+import { PublicModule } from '@packages/public';
 import { ReviewsModule } from '@packages/reviews';
 import { CryptoModule } from '@shared/common/crypto';
 import { FiltersModule } from '@shared/common/filters';
@@ -56,6 +59,9 @@ const routers = [
     GoogleModule,
     LocationsModule,
     ReviewsModule,
+    CampaignsModule,
+    FeedbackModule,
+    PublicModule,
     HealthModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

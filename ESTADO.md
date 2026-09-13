@@ -1,11 +1,11 @@
 # Estado del proyecto — Opinara Backend
 
-> Última actualización: **2026-09-13** (fases 0-5). Documento de traspaso entre sesiones de trabajo.
+> Última actualización: **2026-09-13** (fases 0-6). Documento de traspaso entre sesiones de trabajo.
 > El plan técnico completo está en `~/.claude/plans/en-el-root-del-smooth-turtle.md`.
 
 ## Dónde quedamos
 
-**Fases 0 a 5 terminadas y probadas.** Siguiente: **Fase 6 (Campaigns + QR + Feedback público)**.
+**Fases 0 a 6 terminadas y probadas.** Siguiente: **Fase 7 (README y cierre del MVP)**.
 
 | Fase | Qué incluye | Estado |
 |---|---|---|
@@ -15,8 +15,8 @@
 | 3 | OAuth de Google, `GoogleConnection`, accounts/locations, import de locations | ✅ |
 | 4 | Reviews: modelo, listado, detalle, `PUT/DELETE reply` contra la API v4.9 | ✅ |
 | 5 | Sincronización incremental + endpoint manual + cron + backoff | ✅ |
-| 6 | **Campaigns + QR + Feedback + endpoints públicos** | ⬅️ siguiente |
-| 7 | README completo + `.env.example` + cierre de MVP | pendiente |
+| 6 | Campaigns + QR + Feedback + endpoints públicos | ✅ |
+| 7 | **README completo + `.env.example` + cierre de MVP** | ⬅️ siguiente |
 
 Post-MVP (fuera de alcance por ahora): notificaciones Pub/Sub, BullMQ, `SocialConnection`, IA, analytics, billing.
 
@@ -29,7 +29,7 @@ yarn install
 cp .env.example .env.dev      # completar DATABASE_URI y TOKEN_ENCRYPTION_KEY
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"   # TOKEN_ENCRYPTION_KEY
 yarn start:dev                # dev
-yarn lint && yarn test && yarn build   # verificación completa: 149 tests en verde
+yarn lint && yarn test && yarn build   # verificación completa: 177 tests en verde
 ```
 
 No hay Mongo ni Docker instalados en esta máquina: los tests usan `mongodb-memory-server` (no necesitan nada), y para `start:dev` hace falta un `DATABASE_URI` (Atlas, como camelus).
@@ -79,6 +79,16 @@ GET    /api/businesses/:businessUrn/locations/:locationUrn/reviews/:reviewUrn
 PUT    /api/businesses/:businessUrn/locations/:locationUrn/reviews/:reviewUrn/reply
 DELETE /api/businesses/:businessUrn/locations/:locationUrn/reviews/:reviewUrn/reply
 
+POST   /api/businesses/:businessUrn/campaigns                            (OWNER | ADMIN)
+GET    /api/businesses/:businessUrn/campaigns
+GET    /api/businesses/:businessUrn/campaigns/:campaignUrn
+POST   /api/businesses/:businessUrn/campaigns/:campaignUrn/qr            (OWNER | ADMIN)
+GET    /api/businesses/:businessUrn/feedback
+
+GET    /api/public/r/:businessSlug/:campaignSlug                         (público)
+POST   /api/public/r/:businessSlug/:campaignSlug/feedback                (público)
+POST   /api/public/r/:businessSlug/:campaignSlug/google-click            (público)
+
 POST   /api/businesses/:businessUrn/google/sync                          (OWNER | ADMIN)
 POST   /api/businesses/:businessUrn/locations/:locationUrn/reviews/sync  (OWNER | ADMIN)
 
@@ -105,15 +115,16 @@ GET    /api/health
 
 Todos tienen test de regresión.
 
-## Fase 6 — plan de arranque
+## Fase 7 — plan de arranque
 
-1. `Campaign` (`urn`, `businessUrn`, `locationUrn`, `name`, `slug` único **por business**, `status`, `stats {scans, feedbacks, googleClicks}`) y `QRCode` (`urn`, `businessUrn`, `campaignUrn`, `targetUrl`).
-2. `Feedback` (`urn`, `businessUrn`, `locationUrn`, `campaignUrn`, `rating` 1-5, `comment?`, `source`, `redirectedToGoogle`, `createdAt`). **Sin PII innecesaria**: nada de IP ni user-agent.
-3. Endpoints privados: crear/listar campañas, generar QR (paquete `qrcode`, ya en package.json), listar feedback del negocio.
-4. Endpoints públicos bajo `/api/public/r/:businessSlug/:campaignSlug` (landing + POST feedback + click a Google), con throttle propio y **superficie mínima**: nombre del negocio, título de la location y `newReviewUri`. Nada de urns internos.
-5. **Decisión ya tomada con el usuario**: el CTA a Google se muestra a *todos* los clientes, sin filtrar por rating. Filtrarlo es review gating y viola la política de contenido de Google.
-6. Una location sin `newReviewUri` no puede usarse en una campaña → error `LOCATION_NOT_REVIEWABLE` (el código ya existe en el enum `Errors`).
-7. Tests: slug inexistente → 404, campaña de otro business, rating inválido, contadores, y que el endpoint público no filtre datos internos.
+Lo único que falta para cerrar el MVP: el README completo que pide el spec.
+
+1. Qué hace el producto y qué **no** hace (no crea reseñas; el cliente las escribe en Google).
+2. Requisitos, instalación, variables de entorno (ya están todas en `.env.example`), MongoDB.
+3. **Google Cloud paso a paso**: las cuatro APIs a habilitar, el formulario de acceso, el OAuth client, la callback URL y el scope `business.manage`.
+4. Cómo correr la app y los tests.
+5. Arquitectura y decisiones importantes (se pueden levantar de este documento y de los mensajes de commit).
+6. Revisar que `.env.example` no tenga credenciales reales.
 
 ## Bloqueante externo
 

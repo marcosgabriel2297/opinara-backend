@@ -158,8 +158,27 @@ describe('Campañas y QR (integracion)', () => {
         .expect(201);
     });
 
+    it('pide un slug explicito cuando del nombre no sale ninguno', async () => {
+      // Un nombre solo con emoji o simbolos no produce slug: el error tiene que decir eso,
+      // no que el slug ya esta tomado.
+      const soloEmoji = await create({ name: '🍕🍕🍕', locationUrn }).expect(400);
+      expect(soloEmoji.body.errorCode).toBe('SLUG_NOT_DERIVABLE');
+
+      // Con un slug explicito, el mismo nombre funciona.
+      const conSlug = await create({ name: '🍕🍕🍕', locationUrn, slug: 'pizzeria' }).expect(201);
+      expect(conSlug.body.slug).toBe('pizzeria');
+    });
+
+    it('normaliza acentos y simbolos al derivar el slug', async () => {
+      const response = await create({ name: '  Café & Té — 2x1  ', locationUrn }).expect(201);
+
+      expect(response.body).toMatchObject({ name: 'Café & Té — 2x1', slug: 'cafe-te-2x1' });
+    });
+
     it('valida el payload', async () => {
       await create({ name: 'A', locationUrn }).expect(400);
+      // El nombre se recorta antes de validar: no alcanza con mandar espacios.
+      await create({ name: '   ', locationUrn }).expect(400);
       await create({ name: 'Valida', locationUrn: 'no-es-urn' }).expect(400);
       await create({ name: 'Valida', locationUrn, slug: 'Con Mayusculas' }).expect(400);
       await create({ name: 'Valida', locationUrn, status: 'ACTIVE' }).expect(400);

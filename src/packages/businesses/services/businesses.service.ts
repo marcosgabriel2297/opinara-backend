@@ -30,8 +30,11 @@ export class BusinessesService {
 
   async create(user: AuthenticatedUser, payload: DTO.CreateBusiness): Promise<BusinessWithRole> {
     const slug = slugify(payload.slug ?? payload.name);
+
+    // Un nombre como "🍕🍕" no deja nada utilizable: decirle al usuario que el slug ya
+    // existe lo manda a buscar un conflicto que no existe.
     if (slug.length < 2) {
-      Exceptions.badRequest(Errors.BUSINESS_SLUG_ALREADY_EXISTS);
+      Exceptions.badRequest(Errors.SLUG_NOT_DERIVABLE);
     }
 
     if (await this.businessesRepository.findBySlug(slug)) {

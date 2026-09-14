@@ -2,6 +2,7 @@ export enum Errors {
   // Generales / errores del framework (validacion, ruta inexistente, rate limit)
   INTERNAL_SERVER_ERROR = 'INTERNAL_SERVER_ERROR',
   INVALID_URN = 'INVALID_URN',
+  SLUG_NOT_DERIVABLE = 'SLUG_NOT_DERIVABLE',
   BAD_REQUEST = 'BAD_REQUEST',
   UNAUTHORIZED = 'UNAUTHORIZED',
   FORBIDDEN = 'FORBIDDEN',
@@ -52,6 +53,7 @@ export enum Errors {
 export const ErrorMessages: Record<Errors, string> = {
   [Errors.INTERNAL_SERVER_ERROR]: 'Internal server error',
   [Errors.INVALID_URN]: 'The provided identifier is not valid',
+  [Errors.SLUG_NOT_DERIVABLE]: 'Could not derive a slug from the name, send an explicit slug',
   [Errors.BAD_REQUEST]: 'The request is invalid',
   [Errors.UNAUTHORIZED]: 'Authentication is required',
   [Errors.FORBIDDEN]: 'You do not have access to this resource',

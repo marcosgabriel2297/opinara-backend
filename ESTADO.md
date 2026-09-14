@@ -29,7 +29,7 @@ yarn install
 cp .env.example .env.dev      # completar DATABASE_URI y TOKEN_ENCRYPTION_KEY
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"   # TOKEN_ENCRYPTION_KEY
 yarn start:dev                # dev
-yarn lint && yarn test && yarn build   # verificación completa: 177 tests en verde
+yarn lint && yarn test && yarn build   # verificación completa: 180 tests en verde
 ```
 
 No hay Mongo ni Docker instalados en esta máquina: los tests usan `mongodb-memory-server` (no necesitan nada), y para `start:dev` hace falta un `DATABASE_URI` (Atlas, como camelus).
@@ -112,6 +112,7 @@ GET    /api/health
 | 10 | Dos sincronizaciones simultáneas → **500** (leer-y-después-escribir contra el índice único) | Upsert atómico por `(locationUrn, googleReviewId)` + reintento ante clave duplicada |
 | 11 | El sync manual **abortaba en la primera location con error**, descartando lo ya sincronizado | Reporte por location; si ninguna funciona, el error se propaga |
 | 12 | Al cortar por el tope de páginas **avanzaba el marcador**: las reseñas no traídas quedaban invisibles para siempre, y una corrida completa truncada podía marcarlas como borradas | `truncated`: no avanza el marcador ni concluye borrados, y loguea qué subir |
+| 13 | Un nombre del que no sale slug (`🍕🍕🍕`) devolvía "slug ya tomado", mandando a buscar un conflicto inexistente | `SLUG_NOT_DERIVABLE` en businesses y campañas, más trim del nombre |
 
 Todos tienen test de regresión.
 

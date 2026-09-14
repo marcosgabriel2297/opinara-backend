@@ -57,6 +57,16 @@ describe('Businesses (integracion)', () => {
         .expect(400);
     });
 
+    it('pide un slug explicito cuando del nombre no sale ninguno', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/api/businesses')
+        .set('Authorization', owner.auth)
+        .send({ name: '🍕🍕🍕' })
+        .expect(400);
+
+      expect(response.body.errorCode).toBe('SLUG_NOT_DERIVABLE');
+    });
+
     it('rechaza un slug ya tomado, incluso por otro usuario', async () => {
       await createBusiness(app, owner, { name: 'Panaderia Central' });
       const otro = await registerUser(app);

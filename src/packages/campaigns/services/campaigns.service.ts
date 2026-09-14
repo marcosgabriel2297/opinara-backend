@@ -45,8 +45,11 @@ export class CampaignsService {
     }
 
     const slug = slugify(payload.slug ?? payload.name);
+
+    // Si del nombre no sale un slug utilizable hay que pedir uno explicito, no reportar
+    // un conflicto de unicidad que no existe.
     if (slug.length < 2) {
-      Exceptions.badRequest(Errors.CAMPAIGN_SLUG_ALREADY_EXISTS);
+      Exceptions.badRequest(Errors.SLUG_NOT_DERIVABLE);
     }
 
     if (await this.campaignsRepository.findBySlug(business.urn, slug)) {

@@ -49,18 +49,42 @@ La app **no arranca** si falta `DATABASE_URI`, `JWT_SECRET_KEY` o `TOKEN_ENCRYPT
 
 ## MongoDB
 
-El backend usa una sola base con una sola conexión. Alcanza con apuntar `DATABASE_URI`:
+El backend usa una sola base con una sola conexión. Hay tres formas de tenerla:
 
 ```bash
-# Local con Docker
-docker run -d -p 27017:27017 --name opinara-mongo mongo:7
-DATABASE_URI=mongodb://localhost:27017
+# 1. Docker (recomendado)
+yarn db:up          # levanta mongo:7 con volumen persistente
+yarn db:down        # frena (los datos quedan)
 
-# Atlas
+# 2. Sin Docker: reutiliza el binario de mongod que ya descargan los tests
+yarn mongo:local    # datos persistentes en .mongo-data/
+
+# 3. Atlas
 DATABASE_URI=mongodb+srv://usuario:password@cluster.mongodb.net
 ```
 
+Las dos primeras quedan en `mongodb://127.0.0.1:27017`.
+
 Los índices (únicos y TTL) los crea Mongoose al arrancar. **Los tests no necesitan Mongo**: levantan uno en memoria.
+
+### Datos de prueba
+
+```bash
+yarn seed
+```
+
+Carga datos ficticios: dos negocios (uno para probar el aislamiento entre tenants), tres sucursales, 24 reseñas con respuestas y reseñas anónimas, tres campañas con sus contadores y feedback interno. **Borra todo lo que haya en la base antes de cargar.**
+
+Los cuatro usuarios comparten la contraseña `claveSuperSegura1` y cubren los tres roles:
+
+| Email | Rol |
+|---|---|
+| `dueno@opinara.test` | OWNER de Café de la Esquina |
+| `gerente@opinara.test` | ADMIN de Café de la Esquina |
+| `empleada@opinara.test` | MEMBER de Café de la Esquina |
+| `peluqueria@opinara.test` | OWNER de Peluquería Estilo |
+
+Las conexiones de Google del seed tienen **tokens inventados**: sirven para recorrer la app localmente, no para hablar con Google.
 
 ## Cómo ejecutar
 

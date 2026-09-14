@@ -1,11 +1,11 @@
 # Estado del proyecto — Opinara Backend
 
-> Última actualización: **2026-09-13** (fases 0-6). Documento de traspaso entre sesiones de trabajo.
+> Última actualización: **2026-09-13** (MVP completo, fases 0-7). Documento de traspaso entre sesiones de trabajo.
 > El plan técnico completo está en `~/.claude/plans/en-el-root-del-smooth-turtle.md`.
 
 ## Dónde quedamos
 
-**Fases 0 a 6 terminadas y probadas.** Siguiente: **Fase 7 (README y cierre del MVP)**.
+**MVP completo: fases 0 a 7 terminadas y probadas.** Lo que sigue es post-MVP (ver el final de este documento).
 
 | Fase | Qué incluye | Estado |
 |---|---|---|
@@ -16,7 +16,7 @@
 | 4 | Reviews: modelo, listado, detalle, `PUT/DELETE reply` contra la API v4.9 | ✅ |
 | 5 | Sincronización incremental + endpoint manual + cron + backoff | ✅ |
 | 6 | Campaigns + QR + Feedback + endpoints públicos | ✅ |
-| 7 | **README completo + `.env.example` + cierre de MVP** | ⬅️ siguiente |
+| 7 | README completo + `.env.example` + cierre de MVP | ✅ |
 
 Post-MVP (fuera de alcance por ahora): notificaciones Pub/Sub, BullMQ, `SocialConnection`, IA, analytics, billing.
 
@@ -116,16 +116,11 @@ GET    /api/health
 
 Todos tienen test de regresión.
 
-## Fase 7 — plan de arranque
+## Post-MVP (fuera de alcance por ahora)
 
-Lo único que falta para cerrar el MVP: el README completo que pide el spec.
-
-1. Qué hace el producto y qué **no** hace (no crea reseñas; el cliente las escribe en Google).
-2. Requisitos, instalación, variables de entorno (ya están todas en `.env.example`), MongoDB.
-3. **Google Cloud paso a paso**: las cuatro APIs a habilitar, el formulario de acceso, el OAuth client, la callback URL y el scope `business.manage`.
-4. Cómo correr la app y los tests.
-5. Arquitectura y decisiones importantes (se pueden levantar de este documento y de los mensajes de commit).
-6. Revisar que `.env.example` no tenga credenciales reales.
+1. **Notificaciones de Google por Pub/Sub**: la API ya está habilitada y el diseño previsto (endpoint que valida el JWT OIDC del push y dispara `syncLocation`). Ojo: Google admite **un solo topic por cuenta de Google**, así que hay que avisarle al negocio si ya usa otra herramienta que las configure.
+2. **BullMQ** para mover la sincronización a workers, con lock distribuido: el candado del cron es en memoria y alcanza para una sola instancia.
+3. `SocialConnection` e Instagram/Facebook, generación de contenido con IA, analytics avanzados, billing.
 
 ## Bloqueante externo
 

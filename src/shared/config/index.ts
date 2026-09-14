@@ -15,7 +15,6 @@ export default {
   App: {
     Port: toNumber(process.env.PORT, 3000),
     Prefix: 'api',
-    PublicBaseUrl: process.env.PUBLIC_BASE_URL ?? 'http://localhost:3000',
     CorsOrigins: toList(process.env.CORS_ORIGINS),
   },
   Mongo: {

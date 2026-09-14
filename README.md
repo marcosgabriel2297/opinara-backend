@@ -65,6 +65,8 @@ DATABASE_URI=mongodb+srv://usuario:password@cluster.mongodb.net
 
 Las dos primeras quedan en `mongodb://127.0.0.1:27017`.
 
+> Si `docker` responde `permission denied ... /var/run/docker.sock` recién después de instalarlo, tu sesión todavía tiene la lista de grupos vieja: abrí una terminal nueva o usá `newgrp docker`. Para una sola orden alcanza con `sg docker -c "yarn db:up"`.
+
 Los índices (únicos y TTL) los crea Mongoose al arrancar. **Los tests no necesitan Mongo**: levantan uno en memoria.
 
 ### Datos de prueba

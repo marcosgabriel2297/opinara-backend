@@ -6,7 +6,11 @@ import { BusinessMemberRole, BusinessMemberStatus, BusinessStatus } from '@share
 import { BUSINESS_ROLES_KEY, BusinessMembershipGuard, BusinessRequest } from './business-membership.guard';
 
 const BUSINESS_URN = 'urn:business:11111111-1111-1111-1111-111111111111';
-const USER = { urn: 'urn:user:22222222-2222-2222-2222-222222222222', email: 'due@no.test' };
+const USER = {
+  urn: 'urn:user:22222222-2222-2222-2222-222222222222',
+  email: 'due@no.test',
+  sessionUrn: 'urn:session:22222222-2222-2222-2222-222222222222',
+};
 
 const membershipWith = (role: BusinessMemberRole): BusinessMember => ({
   urn: 'urn:business-member:33333333-3333-3333-3333-333333333333',

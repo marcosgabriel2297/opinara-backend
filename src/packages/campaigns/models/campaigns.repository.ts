@@ -6,8 +6,8 @@ import { CampaignStatus } from '@shared/models/enums/campaign';
 import { DatabaseRepository } from '@shared/repositories';
 import { Campaign } from './campaign.model';
 
-/** Contadores que la landing publica incrementa. */
-export type CampaignCounter = 'scans' | 'feedbacks' | 'googleClicks';
+/** Contadores de la campaña. */
+export type CampaignCounter = 'scans' | 'googleClicks';
 
 @Injectable()
 export class CampaignsRepository extends DatabaseRepository<Campaign> {
@@ -35,7 +35,8 @@ export class CampaignsRepository extends DatabaseRepository<Campaign> {
    * Incremento atomico: la landing publica puede recibir varios escaneos a la vez y
    * leer-sumar-escribir perderia cuentas.
    */
-  async increment(urn: string, counter: CampaignCounter, amount = 1): Promise<void> {
-    await this.model.updateOne({ urn }, { $inc: { [`stats.${counter}`]: amount } }).exec();
+  async increment(urn: string, counters: CampaignCounter[], amount = 1): Promise<void> {
+    const inc = Object.fromEntries(counters.map((counter) => [`stats.${counter}`, amount]));
+    await this.model.updateOne({ urn }, { $inc: inc }).exec();
   }
 }

@@ -12,3 +12,10 @@ export class CampaignParamsDto {
   @Matches(SLUG, { message: 'invalid campaign slug' })
   campaignSlug!: string;
 }
+
+/** El slug del negocio solo: el logo publico (`/public/businesses/:businessSlug/logo`). */
+export class BusinessSlugParamsDto {
+  @IsString()
+  @Matches(SLUG, { message: 'invalid business slug' })
+  businessSlug!: string;
+}

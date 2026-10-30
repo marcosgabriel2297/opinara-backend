@@ -1,0 +1,26 @@
+# MongoDB local para desarrollo.
+#
+#   docker compose up -d mongo     levantar
+#   docker compose down            frenar (los datos quedan en el volumen)
+#   docker compose down -v         frenar y BORRAR los datos
+#
+# Sin autenticacion a proposito: es una base local de desarrollo que solo escucha en
+# localhost. Nunca usar esta configuracion fuera de tu maquina.
+services:
+  mongo:
+    image: mongo:7
+    container_name: opinara-mongo
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:27017:27017'
+    volumes:
+      - opinara-mongo-data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  opinara-mongo-data:

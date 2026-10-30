@@ -13,16 +13,20 @@ export class UsersRepository extends DatabaseRepository<User> {
   }
 
   /** Proyeccion minima para el AuthGuard: se ejecuta en cada request autenticado. */
-  findActiveByUrn(urn: string): Promise<Pick<User, 'urn' | 'email' | 'status'> | null> {
+  findActiveByUrn(urn: string): Promise<Pick<User, 'urn' | 'email' | 'status' | 'mustChangePassword'> | null> {
     return this.model
       .findOne({ urn, status: UserStatus.ACTIVE })
-      .select('urn email status')
-      .lean<Pick<User, 'urn' | 'email' | 'status'> | null>()
+      .select('urn email status mustChangePassword')
+      .lean<Pick<User, 'urn' | 'email' | 'status' | 'mustChangePassword'> | null>()
       .exec();
   }
 
   findByEmail(email: string): Promise<User | null> {
     return this.findOne({ email: email.toLowerCase().trim() });
+  }
+
+  findByUrnWithPassword(urn: string): Promise<User | null> {
+    return this.model.findOne({ urn }).select('+password').lean<User | null>().exec();
   }
 
   /** El password esta marcado `select: false`, hay que pedirlo explicitamente para el login. */

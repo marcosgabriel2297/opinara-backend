@@ -8,6 +8,11 @@ const toNumber = (value: string | undefined, fallback: number): number => {
 const MINUTE_MS = 60 * 1000;
 
 export default {
+  Suggestions: {
+    // El proveedor, la clave y el modelo están en `@shared/integrations/text-generation`.
+    /** Pedidos por minuto y por IP: cada uno gasta cuota (o plata) del proveedor del modelo. */
+    ThrottleLimit: toNumber(process.env.REPLY_SUGGESTIONS_THROTTLE_LIMIT, 30),
+  },
   Sync: {
     /**
      * Solapamiento hacia atras del corte incremental. Google ordena por `updateTime` con

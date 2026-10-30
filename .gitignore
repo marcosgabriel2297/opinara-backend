@@ -12,3 +12,4 @@
 !.yarn/releases
 .tsbuildinfo
 *.tsbuildinfo
+/.mongo-data

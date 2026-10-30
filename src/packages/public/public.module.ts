@@ -1,15 +1,15 @@
 import { Module } from '@nestjs/common';
 
+import { BusinessesModule } from '@packages/businesses';
 import { CampaignsModule } from '@packages/campaigns';
-import { FeedbackModule } from '@packages/feedback';
 import { LocationsModule } from '@packages/locations';
 
 import * as Controllers from './controllers';
 import * as Services from './services';
 
 @Module({
-  imports: [CampaignsModule, FeedbackModule, LocationsModule],
-  controllers: [Controllers.Campaigns],
+  imports: [BusinessesModule, CampaignsModule, LocationsModule],
+  controllers: [Controllers.Campaigns, Controllers.BusinessLogo],
   providers: [Services.Campaigns],
 })
 export class PublicModule {}

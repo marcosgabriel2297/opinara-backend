@@ -1,6 +1,6 @@
 # Opinara Backend
 
-Backend de un SaaS B2B de reputación: un negocio conecta su **Google Business Profile**, genera un QR por sucursal, recibe feedback de sus clientes y gestiona sus reseñas de Google desde un único lugar.
+Backend de un SaaS B2B de reputación: un negocio conecta su **Google Business Profile**, genera un QR por sucursal que lleva a sus clientes directo a dejar la reseña en Google, y gestiona sus reseñas de Google desde un único lugar.
 
 > **Qué NO hace, a propósito**: no crea reseñas. No existe endpoint de Google para eso y la política de Google lo prohíbe. La reseña la escribe el cliente en Google; nosotros la sincronizamos y permitimos responderla con las APIs oficiales. Tampoco hay scraping, bots ni cuentas automatizadas.
 
@@ -9,17 +9,17 @@ Backend de un SaaS B2B de reputación: un negocio conecta su **Google Business P
 ```
 El negocio                                  El cliente
 ──────────                                  ──────────
-1. se registra
+1. recibe su cuenta (la da de alta un admin)
 2. conecta su Google Business Profile
 3. elige qué sucursales importar
 4. crea una campaña y genera su QR    ───►  5. escanea el QR
-                                            6. deja una calificación y un comentario
-                                            7. pasa a Google a dejar su reseña
+                                            6. cae directo en el formulario de reseña de Google
+                                            7. deja su reseña
 8. ve las reseñas sincronizadas
 9. las responde desde el dashboard
 ```
 
-**El link a Google se le muestra a todos los clientes, sin importar la calificación.** Mostrarlo solo a los contentos es *review gating*: Google prohíbe desalentar reseñas negativas o solicitar selectivamente las positivas, y puede restringir el perfil del negocio ([política de contenido](https://support.google.com/business/answer/7400114)). El rating interno se guarda igual, pero no condiciona el link.
+**El QR lleva directo a Google, sin formulario propio en el medio.** Al principio la landing pedía una calificación interna y después ofrecía el link a Google, pero pedirle al cliente que opine dos veces es perderlo en el segundo paso. Ahora `GET /api/public/r/:businessSlug/:campaignSlug` cuenta el escaneo y responde `302` al formulario de reseña de la sucursal. Como no hay filtro de ningún tipo, tampoco hay riesgo de *review gating* ([política de contenido](https://support.google.com/business/answer/7400114)). Las opiniones internas se eliminaron del producto: el endpoint, la entidad y el contador.
 
 ---
 
@@ -49,18 +49,44 @@ La app **no arranca** si falta `DATABASE_URI`, `JWT_SECRET_KEY` o `TOKEN_ENCRYPT
 
 ## MongoDB
 
-El backend usa una sola base con una sola conexión. Alcanza con apuntar `DATABASE_URI`:
+El backend usa una sola base con una sola conexión. Hay tres formas de tenerla:
 
 ```bash
-# Local con Docker
-docker run -d -p 27017:27017 --name opinara-mongo mongo:7
-DATABASE_URI=mongodb://localhost:27017
+# 1. Docker (recomendado)
+yarn db:up          # levanta mongo:7 con volumen persistente
+yarn db:down        # frena (los datos quedan)
 
-# Atlas
+# 2. Sin Docker: reutiliza el binario de mongod que ya descargan los tests
+yarn mongo:local    # datos persistentes en .mongo-data/
+
+# 3. Atlas
 DATABASE_URI=mongodb+srv://usuario:password@cluster.mongodb.net
 ```
 
+Las dos primeras quedan en `mongodb://127.0.0.1:27017`.
+
+> Si `docker` responde `permission denied ... /var/run/docker.sock` recién después de instalarlo, tu sesión todavía tiene la lista de grupos vieja: abrí una terminal nueva o usá `newgrp docker`. Para una sola orden alcanza con `sg docker -c "yarn db:up"`.
+
 Los índices (únicos y TTL) los crea Mongoose al arrancar. **Los tests no necesitan Mongo**: levantan uno en memoria.
+
+### Datos de prueba
+
+```bash
+yarn seed
+```
+
+Carga datos ficticios: dos negocios (uno para probar el aislamiento entre tenants), tres sucursales, 24 reseñas con respuestas y reseñas anónimas, tres campañas con sus contadores. **Borra todo lo que haya en la base antes de cargar.**
+
+Los cuatro usuarios comparten la contraseña `claveSuperSegura1` y cubren los tres roles:
+
+| Email | Rol |
+|---|---|
+| `dueno@opinara.test` | OWNER de Café de la Esquina |
+| `gerente@opinara.test` | ADMIN de Café de la Esquina |
+| `empleada@opinara.test` | MEMBER de Café de la Esquina |
+| `peluqueria@opinara.test` | OWNER de Peluquería Estilo |
+
+Las conexiones de Google del seed tienen **tokens inventados**: sirven para recorrer la app localmente, no para hablar con Google.
 
 ## Cómo ejecutar
 
@@ -83,6 +109,26 @@ npx jest src/packages/reviews    # un paquete puntual
 ```
 
 **Ningún test toca la red ni una cuenta real de Google.** Las integraciones se reemplazan por dobles (`test/google.fakes.ts`) y Mongo corre en memoria (`mongodb-memory-server`), así que la suite es reproducible en cualquier máquina y en CI.
+
+---
+
+## Arrancar sin acceso a las APIs de Google
+
+El acceso a las APIs se aprueba por proyecto de Google Cloud y tarda. Mientras tanto, el circuito del QR **no necesita la API**: el escaneo y el salto a Google funcionan solo con el link de reseña, que se arma con el Place ID de la sucursal.
+
+Por eso existe el alta manual:
+
+```bash
+curl -X POST http://localhost:3000/api/businesses/$BIZ/locations \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"title":"Sucursal Centro","placeId":"ChIJ...","address":"Corrientes 1234"}'
+```
+
+El Place ID se saca de la ficha del local en Google Maps, sin API. Con él, el backend arma el link de reseña (`https://search.google.com/local/writereview?placeid=...`) y la ficha de Maps.
+
+Una sucursal manual queda marcada con `source: "MANUAL"` y se comporta distinto en un solo punto: **no se sincroniza**. Queda fuera del cron y del `POST /google/sync`, y pedirle una sincronización responde `400 LOCATION_NOT_SYNCABLE`. Traer y responder reseñas sigue esperando la aprobación de Google.
+
+**Cuando el acceso llega**, el negocio conecta su cuenta e importa sus sucursales como siempre: la importación **adopta la sucursal manual por `placeId`** en vez de duplicarla. Conserva su `urn`, así que las campañas siguen apuntando a ella y **los QR ya impresos siguen funcionando**; a partir de ahí pasa a `source: "GOOGLE"` y entra en la sincronización.
 
 ---
 
@@ -151,6 +197,10 @@ Todas están documentadas en [`.env.example`](.env.example). Las que importan:
 | `PUBLIC_APP_BASE_URL` | Base del **frontend**: la URL del QR es `{base}/r/{businessSlug}/{campaignSlug}` |
 | `CORS_ORIGINS` | Lista separada por comas. Vacío: abierto en desarrollo, **cerrado en producción** |
 | `REVIEW_SYNC_ENABLED`, `REVIEW_SYNC_CRON` | Sincronización automática de reseñas |
+| `LLM_PROVIDER` | Proveedor del modelo de las respuestas sugeridas: `groq` (por defecto) o `anthropic` |
+| `GROQ_API_KEY`, `GROQ_MODEL`, `GROQ_BASE_URL`, `GROQ_REASONING_EFFORT` | Groq (modelo por defecto `openai/gpt-oss-120b`, razonamiento `medium`). **Opcional**: sin la clave del proveedor elegido, el endpoint responde `503 REPLY_SUGGESTIONS_UNAVAILABLE` y el resumen avisa `replySuggestions: false`. Con `GROQ_BASE_URL` sirve cualquier API compatible con OpenAI (Ollama, OpenRouter) |
+| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | Claude, con `LLM_PROVIDER=anthropic` (modelo por defecto `claude-opus-5-5`) |
+| `REPLY_SUGGESTIONS_THROTTLE_LIMIT` | Tope de sugerencias por minuto e IP (30) |
 
 `NODE_ENV` sólo habilita comportamiento de desarrollo con los valores `dev`, `development` o `test`. Cualquier otra cosa —incluido no setearlo— se trata como producción: los errores no muestran detalle interno y el CORS no se abre solo.
 
@@ -164,15 +214,70 @@ Todo cuelga de `/api`. Los endpoints privados necesitan `Authorization: Bearer <
 
 ### Autenticación
 ```
-POST   /auth/register            POST /auth/login          POST /auth/refresh
+POST   /auth/login               POST /auth/refresh
+POST   /auth/logout              { refreshToken }, sin access token   204
+POST   /auth/logout/all          cierra todas las sesiones del usuario  204
+POST   /auth/password/forgot     { email }   siempre 202
+POST   /auth/password/reset      { token, password }                   204
+POST   /auth/password/change     { currentPassword, newPassword }      204
 GET    /auth/me
 GET    /auth/google/callback     (público: acá redirige Google)
 ```
 
+Cada login abre una **sesión** (`sessions`), y los dos tokens llevan su URN en `sid`. El `AuthGuard` y `/auth/refresh` la consultan, así que cerrar sesión corta el acceso en el acto, aunque los tokens no hayan vencido. Los tokens sin `sid`, emitidos antes de que existieran las sesiones, ya no se aceptan: quien tuviera una sesión abierta entra de nuevo una vez.
+
+No hay registro público: a los usuarios los da de alta un **administrador** de la plataforma (colección `admins`, identidad aparte de `users`):
+
+```
+POST   /admin/auth/login         { email, password }  → { admin, accessToken, expiresIn }
+POST   /admin/users              { email, name }      → 201 { user, temporaryPassword }
+GET    /admin/businesses         negocios con sus sucursales (para los filtros del panel)
+GET    /admin/reviews            reseñas de TODOS los negocios, con negocio y sucursal
+GET    /admin/reviews/summary    total, sin responder, promedio y distribución de lo filtrado
+```
+
+Los dos de reseñas aceptan `businessUrn`, `locationUrn`, `rating`, `hasReply`, `from` / `to` (fecha de la reseña en Google; `to` exclusive) y `search` (texto literal en el comentario o el autor); el listado además `page`, `limit` (hasta 100) y `order` (`newest` | `oldest`). Son la única excepción a la regla de que cada consulta parte de un `businessUrn`: viven en `AdminReviewsRepository`, dentro del paquete del admin. Los consume el panel `opinara-admin`; en producción, su dominio va en `CORS_ORIGINS`.
+
+El token del admin (`type: admin`, dura `ADMIN_TOKEN_EXPIRES_IN_SECONDS`, 8 h por defecto, sin refresh) solo sirve contra `/admin`, y el de un usuario no sirve ahí. El primer admin se crea con `yarn admin:create <email> "<nombre>"`, que imprime su contraseña una sola vez. El alta devuelve una **contraseña provisoria** (también una sola vez) que el admin le pasa al usuario: mientras no la cambie (`mustChangePassword`), el `AuthGuard` responde `403 PASSWORD_CHANGE_REQUIRED` a todo menos `/auth/me`, `/auth/password/change` y `/auth/logout/all`. Cambiarla cierra las demás sesiones; elegir una nueva desde el mail de recuperación también la reemplaza. Las invitaciones al equipo son solo para emails con cuenta (`INVITEE_NOT_REGISTERED`).
+
+Recuperar contraseña manda un link de un solo uso que dura una hora (`PASSWORD_RESET_EXPIRES_IN_SECONDS`). El token va después de `#` (`/reset-password#token=…`): el navegador no lo manda a ningún servidor ni en el `Referer`. En la base queda su SHA-256. Usarlo cambia la contraseña y cierra todas las sesiones del usuario. `forgot` responde 202 exista o no la cuenta, y no espera el envío del mail, para no delatarla por el tiempo de respuesta.
+
 ### Negocios
 ```
 POST   /businesses               GET  /businesses          GET /businesses/:businessUrn
+PUT    /businesses/:businessUrn/logo      (OWNER, ADMIN)   cuerpo: la imagen cruda
+DELETE /businesses/:businessUrn/logo      (OWNER, ADMIN)
 ```
+
+El logo se sube como el cuerpo del request, sin multipart: `Content-Type: image/png`, `image/jpeg` o `image/webp`, hasta 300 KB (`413 LOGO_TOO_LARGE`). El tipo se verifica contra los primeros bytes de la imagen (`400 LOGO_INVALID_IMAGE` si no coinciden). SVG no se acepta: servido desde la API podría ejecutar scripts; el frontend lo convierte a imagen antes de subirlo. Las dos operaciones responden el negocio, con `logoUpdatedAt` actualizado (`null` sin logo).
+
+### Equipo e invitaciones
+```
+GET    /businesses/:businessUrn/members                       miembros (+ invitaciones pendientes para OWNER/ADMIN)
+POST   /businesses/:businessUrn/invitations     (OWNER, ADMIN) { email, role: ADMIN|MEMBER } → { invitation, inviteUrl }
+DELETE /businesses/:businessUrn/invitations/:invitationUrn (OWNER, ADMIN)
+PATCH  /businesses/:businessUrn/members/:memberUrn  (OWNER) { role }
+DELETE /businesses/:businessUrn/members/:memberUrn          sacar a alguien, o irse
+POST   /invitations/lookup       { token }   (público) lo que muestra la pantalla de la invitación
+POST   /invitations/accept       { token }   suma al usuario con sesión
+```
+
+Reglas:
+- **OWNER:** hay uno solo, quien creó el negocio. No se invita, no se le cambia el rol y no se lo saca.
+- **Invitar:** el OWNER invita ADMIN o MEMBER y cambia roles; un ADMIN invita y saca solo MEMBER.
+- **Irse:** cualquiera que no sea OWNER puede irse por su cuenta.
+- **Aceptar:** la invitación es para un email, y la acepta solo quien entró con ese email (`403 INVITATION_EMAIL_MISMATCH`). Vence a los 7 días, e invitar de nuevo al mismo email anula la anterior.
+- **Link para quien invita:** `inviteUrl` vuelve en la respuesta para pasarlo a mano, por WhatsApp, si el mail no llega. Es seguro mostrárselo porque solo sirve para ese email.
+- **Tokens:** van en el cuerpo de los `POST`, no en la URL, así no quedan en logs.
+
+### Mails
+
+`MailerModule` (global) elige el proveedor:
+- **Con `MAIL_RESEND_API_KEY`:** manda por la API HTTP de Resend, sin dependencias.
+- **Sin la clave, en desarrollo:** escribe el mail con su link en el log. Alcanza para probar la recuperación y las invitaciones.
+- **Sin la clave, en producción:** solo registra un error, sin escribir el contenido porque lleva tokens.
+
+Cambiar de proveedor es escribir otra implementación de `Mailer`.
 
 ### Conexión con Google
 ```
@@ -187,6 +292,7 @@ POST   /businesses/:businessUrn/google/sync               (OWNER, ADMIN)
 
 ### Sucursales y reseñas
 ```
+POST   /businesses/:businessUrn/locations                              (OWNER, ADMIN)
 GET    /businesses/:businessUrn/locations
 GET    /businesses/:businessUrn/locations/:locationUrn
 GET    /businesses/:businessUrn/locations/:locationUrn/reviews          ?page&limit&rating&hasReply
@@ -196,23 +302,52 @@ DELETE /businesses/:businessUrn/locations/:locationUrn/reviews/:reviewUrn/reply
 POST   /businesses/:businessUrn/locations/:locationUrn/reviews/sync     (OWNER, ADMIN)
 ```
 
+Todo el negocio (todas las sucursales):
+```
+GET    /businesses/:businessUrn/reviews            ?page&limit&rating&hasReply&locationUrn&order=newest|oldest
+GET    /businesses/:businessUrn/reviews/summary    totales, sin responder, promedio, distribución y últimos 30 días vs. los 30 anteriores
+POST   /businesses/:businessUrn/locations/:locationUrn/reviews/:reviewUrn/reply-suggestion   borrador escrito por el modelo; no publica
+```
+
+`order=oldest` es la fila de respuesta del frontend: la que más espera primero. El promedio del resumen no cuenta las reseñas sin calificación (`starRating` 0). La sugerencia **no publica ni guarda nada**: devuelve un texto que la persona revisa y manda con el `PUT` de siempre. Las instrucciones al modelo son fijas y la reseña va marcada como dato de un tercero, para que un texto en la reseña no pueda dar órdenes.
+
+El modelo está detrás de un **adaptador** (`@shared/integrations/text-generation`), igual que Google:
+- **El dominio** (`ReplySuggesterService`) arma las reglas y el pedido, y depende solo del puerto `TEXT_GENERATION_ADAPTER` (`generate({ system, prompt, maxTokens })`).
+- **Cada proveedor** tiene un adaptador que traduce ese pedido a su API: `GroqTextGenerationService` (`chat/completions`, compatible con OpenAI) y `AnthropicTextGenerationService` (Messages).
+- **Cuál se usa** lo elige `LLM_PROVIDER`.
+
+Sumar un proveedor es escribir su adaptador y agregarlo en `text-generation-integration.module.ts`; el dominio no cambia.
+
 `PUT` y no `POST` para responder: en Google `updateReply` crea la respuesta si no existe y la edita si ya está.
 
-### Campañas, QR y feedback
+El `POST` es el **alta manual**, explicada abajo: la vía normal para dar de alta sucursales es importarlas desde Google.
+
+### Campañas y QR
 ```
 POST   /businesses/:businessUrn/campaigns                  (OWNER, ADMIN)
 GET    /businesses/:businessUrn/campaigns
 GET    /businesses/:businessUrn/campaigns/:campaignUrn
 POST   /businesses/:businessUrn/campaigns/:campaignUrn/qr  (OWNER, ADMIN)
-GET    /businesses/:businessUrn/feedback                   ?page&limit&rating&locationUrn&campaignUrn
+GET    /businesses/:businessUrn/campaigns/:campaignUrn/scans   ?weeks (1-52, por defecto 12)
+GET    /businesses/:businessUrn/scans                          ?weeks — todas las campañas
 ```
+
+Los escaneos por semana salen de `scan_events` (un documento por escaneo contado, sin IP ni user agent), agrupados de lunes a domingo **en la zona horaria del negocio**. Las semanas sin escaneos vienen en 0. Solo hay datos desde que se empezó a registrar (`trackedSince`): los escaneos anteriores siguen en `stats.scans` pero no tienen fecha.
 
 ### Público (sin autenticación)
 ```
-GET    /public/r/:businessSlug/:campaignSlug               landing del QR
-POST   /public/r/:businessSlug/:campaignSlug/feedback      { rating, comment? }
-POST   /public/r/:businessSlug/:campaignSlug/google-click  métrica
+GET    /public/r/:businessSlug/:campaignSlug               302 a Google; cuenta el escaneo
+                                                           límite por IP y campaña → 302 a /r/{b}/{c}/espera
+GET    /public/businesses/:businessSlug/logo               ?v — el logo del negocio
 ```
+
+El logo lo muestran la pantalla del QR, la hoja impresa y el dashboard. Con `?v=` igual a la versión vigente (el `getTime()` de `logoUpdatedAt`) se cachea un año (`immutable`): al cambiar el logo cambia la URL. Sin versión, o con una vieja, cinco minutos. Va con `Cross-Origin-Resource-Policy: cross-origin` (helmet pone `same-origin`) para que el frontend, en otro origen, lo pueda mostrar. Negocio inexistente, suspendido o sin logo responden el mismo `404 LOGO_NOT_FOUND`.
+
+El límite es de `PUBLIC_THROTTLE_LIMIT` escaneos por minuto (60 por defecto) por **IP y campaña**, no solo por IP. Todos los teléfonos del wifi de un local salen por la misma IP, y con un cupo por IP un local lleno se quedaba sin escaneos. Pasado el límite, en lugar de un `429` con JSON, que era lo que veía el cliente en el teléfono, redirige a una página del frontend que espera unos segundos y reintenta sola (`ThrottledScanFilter`). Detrás de un proxy inverso hay que configurar `TRUST_PROXY`; si no, el límite ve la IP del proxy.
+
+Cada `GET` suma `scans` y `googleClicks` en la misma operación atómica (`$inc`), sobre lo que ya había. Un `HEAD` (previsualizadores de links, bots) redirige igual pero no cuenta. La respuesta va con `Cache-Control: no-store`: si el navegador guardara el 302, el segundo escaneo desde el mismo teléfono iría directo a Google y no se contaría.
+
+Si la campaña no sirve (negocio inexistente o suspendido, campaña pausada, sucursal sin link) redirige a `{PUBLIC_APP_BASE_URL}/r/no-disponible`, la misma página para todos los casos. Nunca se responde un JSON de error a quien escaneó, salvo un slug con formato inválido (400) o el rate limit (429).
 
 ### Errores
 
@@ -247,7 +382,6 @@ src/
 │   ├── locations/           #   sucursales importadas
 │   ├── reviews/             #   reseñas, respuestas y sincronización
 │   ├── campaigns/           #   campañas y QR
-│   ├── feedback/            #   feedback propio
 │   ├── public/              #   superficie anónima del QR
 │   └── health/
 └── shared/
@@ -268,13 +402,17 @@ Cada paquete sigue la misma forma: `controllers/`, `services/`, `models/`, `dtos
 ```
 User ──< BusinessMember >── Business ──< Location ──< Review
                                │            │
-                               │            └──< Campaign ──< Feedback
-                               │                     └──< QRCode
-                               └── GoogleConnection
+                               │            └──< Campaign ──< QRCode
+                               │                    └──< ScanEvent
+                               ├── GoogleConnection
+                               ├── BusinessLogo
+                               └──< BusinessInvitation
 ```
 
 - **`BusinessMember`** es la fuente de verdad de la autorización: un usuario puede pertenecer a varios negocios con distinto rol (`OWNER`, `ADMIN`, `MEMBER`).
-- **`Review` y `Feedback` son entidades separadas y no se mezclan.** `Review` es un espejo de Google, cuya fuente de verdad es Google. `Feedback` es dato propio, nunca se publica y no guarda PII.
+- **`Review` es un espejo de Google**, cuya fuente de verdad es Google.
+- **`Session`** (`sessions`): un login en un dispositivo. Se revoca al cerrar sesión o al cambiar la contraseña, y Mongo borra las vencidas solo (índice TTL). `PasswordReset` (`password_resets`) guarda el hash del token de un solo uso.
+- **`BusinessLogo`** (`business_logos`) guarda la imagen aparte: el negocio se carga en cada request (lo usa el guard de membresía) y no arrastra los bytes. En `Business` queda solo `logoUpdatedAt`, que versiona la URL pública.
 - **`Location` guarda dos identificadores de Google** porque las APIs no coinciden: la v1 identifica la sucursal como `locations/{id}`, pero la v4 de reseñas necesita `accounts/{a}/locations/{l}`.
 
 ---
@@ -301,7 +439,7 @@ User ──< BusinessMember >── Business ──< Location ──< Review
 
 ## Estado y qué falta
 
-El MVP está completo de punta a punta. Lo que sigue, deliberadamente fuera de alcance:
+El MVP está completo de punta a punta. Las propuestas de producto y los pendientes técnicos están en [`FUTURAS-FUNCIONALIDADES.md`](FUTURAS-FUNCIONALIDADES.md). Además, deliberadamente fuera de alcance:
 
 - **Notificaciones de Google por Pub/Sub** (la API ya está habilitada y el diseño previsto). Ojo: Google admite **un solo topic por cuenta**, así que hay que avisarle al negocio si ya usa otra herramienta.
 - **BullMQ** para mover la sincronización a workers, con lock distribuido: el candado actual del cron es en memoria y alcanza para una sola instancia.

@@ -35,7 +35,6 @@ const ReviewReplySchema = SchemaFactory.createForClass(ReviewReply);
  *
  * Es un espejo de lectura: la fuente de verdad es Google. Nunca creamos reseñas -no existe
  * endpoint para eso y la politica de Google lo prohibe-, solo las sincronizamos y respondemos.
- * El feedback propio de la plataforma es otra entidad y no se mezcla con esta.
  */
 @Schema({ collection: 'reviews', timestamps: true })
 export class Review implements Entity {
@@ -102,6 +101,8 @@ export const ReviewSchema = SchemaFactory.createForClass(Review);
 ReviewSchema.index({ locationUrn: 1, googleReviewId: 1 }, { unique: true });
 // Orden por defecto del dashboard y corte de la sincronizacion incremental.
 ReviewSchema.index({ businessUrn: 1, googleUpdateTime: -1 });
+// El listado del admin: todas las reseñas de la plataforma, de la mas nueva a la mas vieja.
+ReviewSchema.index({ googleCreateTime: -1 });
 
 export interface PublicReview {
   urn: string;

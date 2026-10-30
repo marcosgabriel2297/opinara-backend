@@ -31,6 +31,13 @@ export class User implements Entity {
   @Prop({ required: true, enum: UserStatus, default: UserStatus.ACTIVE })
   status!: UserStatus;
 
+  /**
+   * El alta la hace un admin con una contraseña provisoria: hasta que el usuario elija la suya,
+   * el `AuthGuard` solo le deja cambiarla (ver `AllowPendingPasswordChange`).
+   */
+  @Prop({ required: true, default: false })
+  mustChangePassword!: boolean;
+
   declare createdAt?: Date;
   declare updatedAt?: Date;
 }
@@ -44,6 +51,7 @@ export interface PublicUser {
   email: string;
   name: string;
   status: UserStatus;
+  mustChangePassword: boolean;
   createdAt?: Date;
 }
 
@@ -52,5 +60,6 @@ export const toPublicUser = (user: User): PublicUser => ({
   email: user.email,
   name: user.name,
   status: user.status,
+  mustChangePassword: user.mustChangePassword ?? false,
   createdAt: user.createdAt,
 });

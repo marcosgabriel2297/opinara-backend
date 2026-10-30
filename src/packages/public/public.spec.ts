@@ -18,8 +18,9 @@ import {
 import { TestUser, createBusiness, registerUser } from '../../../test/helpers';
 
 const GOOGLE_URL = 'https://search.google.com/local/writereview?placeid=ChIJfake555';
+const UNAVAILABLE_URL = 'https://app.opinara.test/r/no-disponible';
 
-describe('Landing publica del QR (integracion)', () => {
+describe('QR publico: redireccion a Google (integracion)', () => {
   let app: INestApplication;
   let connection: Connection;
   let close: () => Promise<void>;
@@ -82,185 +83,132 @@ describe('Landing publica del QR (integracion)', () => {
         'locations',
         'campaigns',
         'qr_codes',
-        'feedback',
       ].map((name) => connection.collection(name).deleteMany({})),
     );
   });
 
-  const landing = (business = businessSlug, campaign = 'mostrador') =>
-    request(app.getHttpServer()).get(`/api/public/r/${business}/${campaign}`);
-
-  const sendFeedback = (payload: Record<string, unknown>, business = businessSlug, campaign = 'mostrador') =>
-    request(app.getHttpServer()).post(`/api/public/r/${business}/${campaign}/feedback`).send(payload);
+  const scan = (business = businessSlug, campaign = 'mostrador') =>
+    request(app.getHttpServer()).get(`/api/public/r/${business}/${campaign}`).redirects(0);
 
   const campaignStats = async () => {
     const stored = await connection.collection('campaigns').findOne({ urn: campaignUrn });
-    return stored?.stats as { scans: number; feedbacks: number; googleClicks: number };
+    return stored?.stats as { scans: number; googleClicks: number };
   };
 
-  describe('landing', () => {
-    it('responde sin autenticacion y con la superficie minima', async () => {
-      const response = await landing().expect(200);
+  describe('escaneo del QR', () => {
+    it('redirige directo a Google, sin autenticacion y sin cuerpo con datos', async () => {
+      const response = await scan().expect(302);
 
-      expect(response.body).toEqual({
-        business: { name: 'Cafe de la Esquina' },
-        location: { title: 'Sucursal Centro' },
-        campaign: { name: 'Mostrador', slug: 'mostrador' },
-        googleReviewUrl: GOOGLE_URL,
-      });
+      expect(response.headers.location).toBe(GOOGLE_URL);
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.headers['x-robots-tag']).toBe('noindex, nofollow');
 
-      // Nada de identificadores internos ni datos del negocio.
-      const raw = JSON.stringify(response.body);
+      const raw = JSON.stringify(response.headers) + response.text;
       expect(raw).not.toContain('urn:');
       expect(raw).not.toContain(businessUrn);
-      expect(raw).not.toContain('placeId');
     });
 
-    it('cuenta los escaneos', async () => {
-      await landing().expect(200);
-      await landing().expect(200);
+    it('cada escaneo cuenta como escaneo y como envio a Google, en la misma operacion', async () => {
+      await scan().expect(302);
+      await scan().expect(302);
 
-      expect((await campaignStats()).scans).toBe(2);
+      expect(await campaignStats()).toEqual({ scans: 2, googleClicks: 2 });
     });
 
-    it('responde 404 igual para negocio, campaña o slug inexistentes', async () => {
-      const inexistente = await landing('negocio-que-no-existe', 'mostrador').expect(404);
-      const campanaMala = await landing(businessSlug, 'campania-inexistente').expect(404);
+    it('no pisa las metricas historicas: suma sobre lo que ya habia', async () => {
+      await connection
+        .collection('campaigns')
+        .updateOne({ urn: campaignUrn }, { $set: { stats: { scans: 120, googleClicks: 41 } } });
 
-      expect(inexistente.body.errorCode).toBe('CAMPAIGN_NOT_FOUND');
-      expect(campanaMala.body.message).toBe(inexistente.body.message);
+      await scan().expect(302);
+
+      expect(await campaignStats()).toEqual({ scans: 121, googleClicks: 42 });
     });
 
-    it('una campaña pausada deja de responder', async () => {
+    it('escaneos concurrentes no pierden cuentas', async () => {
+      // Un solo servidor escuchando: si supertest levanta uno efimero por pedido, 20 a la vez
+      // terminan en ECONNRESET y el test mediria el harness, no el contador.
+      const url = await app.listen(0).then(() => app.getUrl());
+      const target = `${url.replace('[::1]', 'localhost')}/api/public/r/${businessSlug}/mostrador`;
+
+      const statuses = await Promise.all(
+        Array.from({ length: 20 }, () => fetch(target, { redirect: 'manual' }).then((response) => response.status)),
+      );
+
+      expect(statuses).toEqual(Array<number>(20).fill(302));
+
+      expect(await campaignStats()).toEqual({ scans: 20, googleClicks: 20 });
+    });
+
+    it('un HEAD (previsualizadores, bots) redirige igual pero no cuenta', async () => {
+      const response = await request(app.getHttpServer())
+        .head(`/api/public/r/${businessSlug}/mostrador`)
+        .redirects(0)
+        .expect(302);
+
+      expect(response.headers.location).toBe(GOOGLE_URL);
+      expect(await campaignStats()).toEqual({ scans: 0, googleClicks: 0 });
+    });
+
+    it('todo QR que no sirve va a la misma pagina de "no disponible"', async () => {
+      const inexistente = await scan('negocio-que-no-existe', 'mostrador').expect(302);
+      const campanaMala = await scan(businessSlug, 'campania-inexistente').expect(302);
+
+      expect(inexistente.headers.location).toBe(UNAVAILABLE_URL);
+      expect(campanaMala.headers.location).toBe(UNAVAILABLE_URL);
+    });
+
+    it('una campaña pausada deja de redirigir a Google y no cuenta', async () => {
       await connection.collection('campaigns').updateOne({ urn: campaignUrn }, { $set: { status: 'PAUSED' } });
 
-      await landing().expect(404);
+      expect((await scan().expect(302)).headers.location).toBe(UNAVAILABLE_URL);
+      expect((await campaignStats()).scans).toBe(0);
     });
 
-    it('un negocio suspendido deja de responder', async () => {
+    it('un negocio suspendido deja de redirigir a Google', async () => {
       await connection.collection('businesses').updateOne({ urn: businessUrn }, { $set: { status: 'SUSPENDED' } });
 
-      await landing().expect(404);
+      expect((await scan().expect(302)).headers.location).toBe(UNAVAILABLE_URL);
     });
 
     it('si la location pierde el link de Google, la campaña deja de servir', async () => {
       await connection.collection('locations').updateOne({ urn: locationUrn }, { $unset: { newReviewUri: '' } });
 
-      await landing().expect(404);
+      expect((await scan().expect(302)).headers.location).toBe(UNAVAILABLE_URL);
     });
 
     it('rechaza slugs con formato invalido sin tocar la base', async () => {
       await request(app.getHttpServer()).get('/api/public/r/Con%20Espacios/mostrador').expect(400);
       await request(app.getHttpServer()).get(`/api/public/r/${businessSlug}/..%2F..%2Fadmin`).expect(400);
     });
-  });
 
-  describe('envio de feedback', () => {
-    it('guarda el feedback y devuelve el link de Google', async () => {
-      const response = await sendFeedback({ rating: 5, comment: '  Excelente atencion  ' }).expect(201);
-
-      expect(response.body).toEqual({ googleReviewUrl: GOOGLE_URL });
-
-      const [stored] = await connection.collection('feedback').find({}).toArray();
-      expect(stored).toMatchObject({
-        businessUrn,
-        locationUrn,
-        campaignUrn,
-        rating: 5,
-        comment: 'Excelente atencion',
-        source: 'QR',
-      });
-      expect((await campaignStats()).feedbacks).toBe(1);
-    });
-
-    it('devuelve el link de Google tambien con calificaciones bajas', async () => {
-      // Decision de producto: mostrar el link solo a los clientes contentos es review
-      // gating y viola la politica de contenido de Google.
-      for (const rating of [1, 2, 3, 4, 5]) {
-        const response = await sendFeedback({ rating }).expect(201);
-        expect(response.body.googleReviewUrl).toBe(GOOGLE_URL);
-      }
-
-      expect(await connection.collection('feedback').countDocuments()).toBe(5);
-    });
-
-    it('no guarda datos personales del cliente', async () => {
-      await sendFeedback({ rating: 4 }).set('User-Agent', 'Mozilla/5.0 (iPhone)').expect(201);
-
-      const [stored] = await connection.collection('feedback').find({}).toArray();
-      const raw = JSON.stringify(stored);
-      expect(raw).not.toContain('iPhone');
-      expect(raw).not.toContain('127.0.0.1');
-      expect(stored).not.toHaveProperty('ip');
-      expect(stored).not.toHaveProperty('userAgent');
-    });
-
-    it('valida el rating y el comentario', async () => {
-      await sendFeedback({ rating: 0 }).expect(400);
-      await sendFeedback({ rating: 6 }).expect(400);
-      await sendFeedback({ rating: 'cinco' }).expect(400);
-      await sendFeedback({}).expect(400);
-      await sendFeedback({ rating: 5, comment: '   ' }).expect(400);
-      await sendFeedback({ rating: 5, comment: 'x'.repeat(2001) }).expect(400);
-      await sendFeedback({ rating: 5, businessUrn: 'urn:business:otro' }).expect(400);
-    });
-
-    it('no acepta feedback de una campaña pausada', async () => {
-      await connection.collection('campaigns').updateOne({ urn: campaignUrn }, { $set: { status: 'PAUSED' } });
-
-      await sendFeedback({ rating: 5 }).expect(404);
-      expect(await connection.collection('feedback').countDocuments()).toBe(0);
+    it('el formulario propio y el click a Google ya no existen', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/public/r/${businessSlug}/mostrador/feedback`)
+        .send({ rating: 5 })
+        .expect(404);
+      await request(app.getHttpServer()).post(`/api/public/r/${businessSlug}/mostrador/google-click`).expect(404);
     });
   });
 
-  describe('click a Google', () => {
-    it('cuenta el click', async () => {
-      await request(app.getHttpServer()).post(`/api/public/r/${businessSlug}/mostrador/google-click`).expect(204);
-
-      expect((await campaignStats()).googleClicks).toBe(1);
-    });
-  });
-
-  describe('el negocio ve su feedback', () => {
-    it('lista el feedback propio, paginado y filtrable', async () => {
-      await sendFeedback({ rating: 5, comment: 'Excelente' }).expect(201);
-      await sendFeedback({ rating: 2, comment: 'Demoraron' }).expect(201);
-
-      const response = await request(app.getHttpServer())
-        .get(`/api/businesses/${businessUrn}/feedback`)
-        .set('Authorization', owner.auth)
-        .expect(200);
-
-      expect(response.body).toMatchObject({ total: 2, page: 0, limit: 20 });
-      expect(response.body.items[0]).toMatchObject({ rating: 2, comment: 'Demoraron' });
-
-      const filtrado = await request(app.getHttpServer())
-        .get(`/api/businesses/${businessUrn}/feedback`)
-        .query({ rating: 5 })
-        .set('Authorization', owner.auth)
-        .expect(200);
-      expect(filtrado.body.total).toBe(1);
-    });
-
-    it('un negocio ajeno no ve el feedback', async () => {
-      await sendFeedback({ rating: 5 }).expect(201);
-      const ajeno = await registerUser(app);
-      const otro = await createBusiness(app, ajeno, { name: 'Negocio Vecino' });
-
+  describe('opiniones internas', () => {
+    it('ya no existen: ni el listado ni el contador en la campaña', async () => {
       await request(app.getHttpServer())
         .get(`/api/businesses/${businessUrn}/feedback`)
-        .set('Authorization', ajeno.auth)
+        .set('Authorization', owner.auth)
         .expect(404);
 
-      const vacio = await request(app.getHttpServer())
-        .get(`/api/businesses/${otro.urn}/feedback`)
-        .set('Authorization', ajeno.auth)
-        .expect(200);
-      expect(vacio.body.total).toBe(0);
-    });
+      // Una campaña vieja con el contador guardado no lo devuelve.
+      await connection
+        .collection('campaigns')
+        .updateOne({ urn: campaignUrn }, { $set: { stats: { scans: 7, feedbacks: 2, googleClicks: 2 } } });
 
-    it('exige autenticacion', async () => {
-      await request(app.getHttpServer()).get(`/api/businesses/${businessUrn}/feedback`).expect(401);
+      const { body } = await request(app.getHttpServer())
+        .get(`/api/businesses/${businessUrn}/campaigns/${campaignUrn}`)
+        .set('Authorization', owner.auth)
+        .expect(200);
+
+      expect(body.stats).toEqual({ scans: 7, googleClicks: 2 });
     });
   });
 });

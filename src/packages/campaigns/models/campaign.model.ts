@@ -12,9 +12,6 @@ export class CampaignStats {
   @Prop({ required: true, default: 0 })
   scans!: number;
 
-  @Prop({ required: true, default: 0 })
-  feedbacks!: number;
-
   /** Clientes que siguieron el link hacia Google. */
   @Prop({ required: true, default: 0 })
   googleClicks!: number;
@@ -47,7 +44,7 @@ export class Campaign implements Entity {
   @Prop({ required: true, enum: CampaignStatus, default: CampaignStatus.ACTIVE })
   status!: CampaignStatus;
 
-  @Prop({ type: CampaignStatsSchema, required: true, default: () => ({ scans: 0, feedbacks: 0, googleClicks: 0 }) })
+  @Prop({ type: CampaignStatsSchema, required: true, default: () => ({ scans: 0, googleClicks: 0 }) })
   stats!: CampaignStats;
 
   @Prop({ required: true })

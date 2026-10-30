@@ -3,6 +3,7 @@ import { Connection } from 'mongoose';
 import request from 'supertest';
 
 import { createTestApp } from '../../../test/app.factory';
+import { createAdmin } from '../../../test/helpers';
 
 const CREDENTIALS = { email: 'Dueno@Negocio.test', password: 'unaClaveSegura1', name: 'Dueño del negocio' };
 
@@ -19,32 +20,108 @@ describe('Authentication (integracion)', () => {
     await close();
   });
 
-  afterEach(async () => {
-    await connection.collection('users').deleteMany({});
+  let adminAuth: string;
+
+  beforeEach(async () => {
+    adminAuth = await createAdmin(app);
   });
 
-  const register = (payload: Record<string, unknown> = CREDENTIALS) =>
-    request(app.getHttpServer()).post('/api/auth/register').send(payload);
+  afterEach(async () => {
+    await Promise.all(['users', 'admins', 'sessions'].map((name) => connection.collection(name).deleteMany({})));
+  });
 
-  const login = (payload: Record<string, unknown>) =>
-    request(app.getHttpServer()).post('/api/auth/login').send(payload);
+  const http = () => request(app.getHttpServer());
 
-  describe('register', () => {
-    it('crea el usuario y devuelve la sesion sin exponer el password', async () => {
-      const response = await register().expect(201);
+  /** Alta por el admin + primer inicio de sesion con la contraseña provisoria. */
+  const firstLogin = async () => {
+    const created = await http()
+      .post('/api/admin/users')
+      .set('Authorization', adminAuth)
+      .send({ email: CREDENTIALS.email, name: CREDENTIALS.name })
+      .expect(201);
+    const session = await login({ email: CREDENTIALS.email, password: created.body.temporaryPassword }).expect(200);
+    return { temporaryPassword: created.body.temporaryPassword as string, session: session.body };
+  };
 
-      expect(response.body.user).toMatchObject({ email: 'dueno@negocio.test', name: 'Dueño del negocio' });
-      expect(response.body.user.urn).toMatch(/^urn:user:/);
-      expect(response.body).toHaveProperty('accessToken');
-      expect(response.body).toHaveProperty('refreshToken');
-      expect(response.body.expiresIn).toBe(86400);
-      expect(JSON.stringify(response.body)).not.toContain(CREDENTIALS.password);
-      expect(response.body.user).not.toHaveProperty('password');
-      expect(response.body.user).not.toHaveProperty('_id');
+  const changePassword = (accessToken: string, payload: Record<string, unknown>) =>
+    http().post('/api/auth/password/change').set('Authorization', `Bearer ${accessToken}`).send(payload);
+
+  /** Usuario con su propia contraseña ya elegida: devuelve la sesion de un login normal. */
+  const register = async (password = CREDENTIALS.password) => {
+    const { temporaryPassword, session } = await firstLogin();
+    await changePassword(session.accessToken, { currentPassword: temporaryPassword, newPassword: password }).expect(
+      204,
+    );
+    return login({ email: CREDENTIALS.email, password }).expect(200);
+  };
+
+  const login = (payload: Record<string, unknown>) => http().post('/api/auth/login').send(payload);
+
+  it('no hay registro publico', async () => {
+    await http().post('/api/auth/register').send(CREDENTIALS).expect(404);
+  });
+
+  describe('contraseña provisoria del alta', () => {
+    it('el primer login devuelve la sesion marcada para cambiar la contraseña', async () => {
+      const { session } = await firstLogin();
+
+      expect(session.user).toMatchObject({ email: 'dueno@negocio.test', mustChangePassword: true });
+      expect(session).toHaveProperty('accessToken');
+      expect(session).toHaveProperty('refreshToken');
+    });
+
+    it('hasta cambiarla solo deja usar /me y el cambio de contraseña', async () => {
+      const { session } = await firstLogin();
+      const auth = `Bearer ${session.accessToken}`;
+
+      const blocked = await http().get('/api/businesses').set('Authorization', auth).expect(403);
+      expect(blocked.body.errorCode).toBe('PASSWORD_CHANGE_REQUIRED');
+
+      const me = await http().get('/api/auth/me').set('Authorization', auth).expect(200);
+      expect(me.body.mustChangePassword).toBe(true);
+    });
+
+    it('al cambiarla libera la cuenta, sigue en esta sesion y cierra las demas', async () => {
+      const { temporaryPassword, session } = await firstLogin();
+      const other = await login({ email: CREDENTIALS.email, password: temporaryPassword }).expect(200);
+
+      await changePassword(session.accessToken, {
+        currentPassword: temporaryPassword,
+        newPassword: CREDENTIALS.password,
+      }).expect(204);
+
+      const auth = `Bearer ${session.accessToken}`;
+      await http().get('/api/businesses').set('Authorization', auth).expect(200);
+      const me = await http().get('/api/auth/me').set('Authorization', auth).expect(200);
+      expect(me.body.mustChangePassword).toBe(false);
+
+      await http().get('/api/auth/me').set('Authorization', `Bearer ${other.body.accessToken}`).expect(401);
+      await login({ email: CREDENTIALS.email, password: temporaryPassword }).expect(401);
+      await login({ email: CREDENTIALS.email, password: CREDENTIALS.password }).expect(200);
+    });
+
+    it('rechaza una contraseña actual incorrecta, una igual a la actual y una corta', async () => {
+      const { temporaryPassword, session } = await firstLogin();
+
+      const wrong = await changePassword(session.accessToken, {
+        currentPassword: 'noEsLaProvisoria1',
+        newPassword: CREDENTIALS.password,
+      }).expect(400);
+      expect(wrong.body.errorCode).toBe('WRONG_CURRENT_PASSWORD');
+
+      const same = await changePassword(session.accessToken, {
+        currentPassword: temporaryPassword,
+        newPassword: temporaryPassword,
+      }).expect(400);
+      expect(same.body.errorCode).toBe('SAME_PASSWORD');
+
+      await changePassword(session.accessToken, { currentPassword: temporaryPassword, newPassword: 'corta' }).expect(
+        400,
+      );
     });
 
     it('guarda el password hasheado, nunca en texto plano', async () => {
-      await register().expect(201);
+      await register();
 
       const stored = await connection.collection('users').findOne({ email: 'dueno@negocio.test' });
 
@@ -52,48 +129,19 @@ describe('Authentication (integracion)', () => {
       expect(stored?.password).not.toBe(CREDENTIALS.password);
     });
 
-    it('rechaza un email ya registrado', async () => {
-      await register().expect(201);
-
-      const response = await register({ ...CREDENTIALS, name: 'Otro' }).expect(409);
-
-      expect(response.body.errorCode).toBe('EMAIL_ALREADY_EXISTS');
-    });
-
-    it('rechaza passwords cortos y emails invalidos', async () => {
-      await register({ ...CREDENTIALS, password: 'corta' }).expect(400);
-      await register({ ...CREDENTIALS, email: 'no-es-un-email' }).expect(400);
-    });
-
-    it('devuelve 409, no 500, ante registros concurrentes con el mismo email', async () => {
-      const responses = await Promise.all([register(), register(), register(), register(), register()]);
-
-      const statuses = responses.map((response) => response.status).sort();
-      expect(statuses).toEqual([201, 409, 409, 409, 409]);
-      // Ningun mensaje puede filtrar nombres de coleccion o de indice de Mongo.
-      expect(JSON.stringify(responses.map((response) => response.body))).not.toContain('E11000');
-      expect(await connection.collection('users').countDocuments({ email: 'dueno@negocio.test' })).toBe(1);
-    });
-
     it('no trunca passwords largos (bcrypt corta a 72 bytes)', async () => {
       const password = `${'A'.repeat(72)}-sufijo-unico`;
-      await register({ ...CREDENTIALS, password }).expect(201);
+      await register(password);
 
       await login({ email: CREDENTIALS.email, password }).expect(200);
       await login({ email: CREDENTIALS.email, password: 'A'.repeat(72) }).expect(401);
       await login({ email: CREDENTIALS.email, password: `${'A'.repeat(72)}-otro-sufijo` }).expect(401);
     });
-
-    it('rechaza campos no declarados en el DTO', async () => {
-      const response = await register({ ...CREDENTIALS, status: 'ADMIN' }).expect(400);
-
-      expect(response.body.message).toContain('status');
-    });
   });
 
   describe('login', () => {
     beforeEach(async () => {
-      await register().expect(201);
+      await register();
     });
 
     it('autentica con el email en cualquier capitalizacion', async () => {
@@ -126,7 +174,7 @@ describe('Authentication (integracion)', () => {
       await request(app.getHttpServer()).get('/api/auth/me').expect(401);
       await request(app.getHttpServer()).get('/api/auth/me').set('Authorization', 'Bearer no-es-un-jwt').expect(401);
 
-      const { body } = await register().expect(201);
+      const { body } = await register();
       await request(app.getHttpServer())
         .get('/api/auth/me')
         .set('Authorization', `Basic ${body.accessToken}`)
@@ -134,7 +182,7 @@ describe('Authentication (integracion)', () => {
     });
 
     it('devuelve el usuario autenticado', async () => {
-      const { body } = await register().expect(201);
+      const { body } = await register();
 
       const response = await request(app.getHttpServer())
         .get('/api/auth/me')
@@ -146,7 +194,7 @@ describe('Authentication (integracion)', () => {
     });
 
     it('no acepta un refresh token como access token', async () => {
-      const { body } = await register().expect(201);
+      const { body } = await register();
 
       const response = await request(app.getHttpServer())
         .get('/api/auth/me')
@@ -159,7 +207,7 @@ describe('Authentication (integracion)', () => {
 
   describe('refresh', () => {
     it('entrega una sesion nueva a partir del refresh token', async () => {
-      const { body } = await register().expect(201);
+      const { body } = await register();
 
       const response = await request(app.getHttpServer())
         .post('/api/auth/refresh')
@@ -176,7 +224,7 @@ describe('Authentication (integracion)', () => {
     });
 
     it('rechaza un access token, un token corrupto y un usuario borrado', async () => {
-      const { body } = await register().expect(201);
+      const { body } = await register();
 
       const withAccess = await request(app.getHttpServer())
         .post('/api/auth/refresh')

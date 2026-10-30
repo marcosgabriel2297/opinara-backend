@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 
 import { BusinessAccess, GetBusiness, GetUser } from '@shared/common/decorators';
 import { AuthenticatedUser } from '@shared/common/interfaces';
@@ -30,6 +30,12 @@ export class CampaignsController {
     return this.service.findOne(business, campaignUrn);
   }
 
+  @Get('/:campaignUrn/scans')
+  @BusinessAccess()
+  scans(@GetBusiness() business: Business, @Param('campaignUrn') campaignUrn: string, @Query() query: DTO.ScansQuery) {
+    return this.service.scansByWeek(business, query.weeks ?? DTO.DEFAULT_SCAN_WEEKS, campaignUrn);
+  }
+
   @Post('/:campaignUrn/qr')
   @BusinessAccess(BusinessMemberRole.OWNER, BusinessMemberRole.ADMIN)
   generateQr(
@@ -38,5 +44,17 @@ export class CampaignsController {
     @Param('campaignUrn') campaignUrn: string,
   ) {
     return this.service.generateQr(business, user, campaignUrn);
+  }
+}
+
+/** Los escaneos de todas las campañas del negocio, por semana. */
+@Controller('businesses/:businessUrn/scans')
+export class BusinessScansController {
+  constructor(private readonly service: Services.Campaigns) {}
+
+  @Get()
+  @BusinessAccess()
+  scans(@GetBusiness() business: Business, @Query() query: DTO.ScansQuery) {
+    return this.service.scansByWeek(business, query.weeks ?? DTO.DEFAULT_SCAN_WEEKS);
   }
 }

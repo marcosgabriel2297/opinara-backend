@@ -77,7 +77,6 @@ describe('Campañas y QR (integracion)', () => {
         'locations',
         'campaigns',
         'qr_codes',
-        'feedback',
       ].map((name) => connection.collection(name).deleteMany({})),
     );
   });
@@ -97,7 +96,7 @@ describe('Campañas y QR (integracion)', () => {
         slug: 'mostrador-principal',
         locationUrn,
         status: 'ACTIVE',
-        stats: { scans: 0, feedbacks: 0, googleClicks: 0 },
+        stats: { scans: 0, googleClicks: 0 },
         targetUrl: `https://app.opinara.test/r/${businessSlug}/mostrador-principal`,
       });
     });

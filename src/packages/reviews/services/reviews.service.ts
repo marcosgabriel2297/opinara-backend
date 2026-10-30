@@ -19,6 +19,23 @@ import { isDuplicateKeyError } from '@shared/utils';
 import * as DTO from '../dtos';
 import { DEFAULT_PAGE_SIZE } from '../dtos';
 import { PublicReview, REVIEW_ENTITY, Review, ReviewsRepository, toPublicReview } from '../models';
+import { REPLY_SUGGESTER, ReplySuggester } from './reply-suggester';
+
+export interface ReviewsSummary {
+  total: number;
+  unanswered: number;
+  oldestUnansweredAt: Date | null;
+  /** Promedio de las reseñas con calificación; `null` si no hay ninguna. */
+  averageRating: number | null;
+  ratingCounts: Record<'1' | '2' | '3' | '4' | '5', number>;
+  /** Reseñas creadas en los últimos 30 días y en los 30 anteriores, para comparar. */
+  last30Days: { count: number; averageRating: number | null };
+  previous30Days: { count: number; averageRating: number | null };
+  /** Si el servidor puede sugerir respuestas. */
+  replySuggestions: boolean;
+}
+
+const roundRating = (value: number | null): number | null => (value === null ? null : Math.round(value * 100) / 100);
 
 /** Que paso con una reseña al sincronizarla. */
 export type UpsertOutcome = 'imported' | 'updated' | 'unchanged';
@@ -34,7 +51,81 @@ export class ReviewsService {
     private readonly locationsService: LocationsService,
     private readonly tokenService: GoogleTokenService,
     @Inject(GOOGLE_REVIEWS_ADAPTER) private readonly reviews: GoogleReviewsAdapter,
+    @Inject(REPLY_SUGGESTER) private readonly suggester: ReplySuggester,
   ) {}
+
+  /**
+   * Todas las sucursales del negocio. Si viene una sucursal, se valida como en el listado
+   * por sucursal: una ajena responde 404, no una lista vacía.
+   */
+  async findAllForBusiness(businessUrn: string, query: DTO.ListBusinessReviewsQuery): Promise<Paginated<PublicReview>> {
+    if (query.locationUrn !== undefined) {
+      await this.locationsService.getOwned(businessUrn, query.locationUrn);
+    }
+
+    const page = query.page ?? 0;
+    const limit = query.limit ?? DEFAULT_PAGE_SIZE;
+    const filters = { locationUrn: query.locationUrn, rating: query.rating, hasReply: query.hasReply };
+
+    const [reviews, total] = await Promise.all([
+      this.reviewsRepository.findPage(businessUrn, filters, page, limit, query.order ?? 'newest'),
+      this.reviewsRepository.countForBusiness(businessUrn, filters),
+    ]);
+
+    return paginate(reviews.map(toPublicReview), page, limit, total);
+  }
+
+  async summary(businessUrn: string): Promise<ReviewsSummary> {
+    const row = await this.reviewsRepository.summary(businessUrn);
+
+    return {
+      total: row.total,
+      unanswered: row.unanswered,
+      oldestUnansweredAt: row.oldestUnansweredAt,
+      averageRating: roundRating(row.averageRating),
+      ratingCounts: { '1': row.stars1, '2': row.stars2, '3': row.stars3, '4': row.stars4, '5': row.stars5 },
+      last30Days: { count: row.last30Count, averageRating: roundRating(row.last30Average) },
+      previous30Days: { count: row.previous30Count, averageRating: roundRating(row.previous30Average) },
+      replySuggestions: this.suggester.available,
+    };
+  }
+
+  /**
+   * Un borrador de respuesta para que la persona lo revise y lo publique. No publica nada ni
+   * guarda el texto: lo que se publica es siempre lo que la persona manda después.
+   */
+  async suggestReply(
+    business: { urn: string; name: string },
+    locationUrn: string,
+    reviewUrn: string,
+  ): Promise<{ comment: string }> {
+    if (!this.suggester.available) {
+      Exceptions.unavailable(Errors.REPLY_SUGGESTIONS_UNAVAILABLE);
+    }
+
+    const { review, location } = await this.getOwned(business.urn, locationUrn, reviewUrn);
+    const firstName = review.reviewer.isAnonymous ? undefined : review.reviewer.displayName?.split(/\s+/)[0];
+
+    let comment: string | null;
+    try {
+      comment = await this.suggester.suggest({
+        businessName: business.name,
+        locationTitle: location.title,
+        rating: review.starRating,
+        reviewerFirstName: firstName,
+        comment: review.comment,
+      });
+    } catch (error) {
+      this.logger.error(`Fallo la sugerencia para ${review.urn}`, error);
+      Exceptions.unavailable(Errors.REPLY_SUGGESTION_FAILED);
+    }
+
+    if (comment === null) {
+      Exceptions.unavailable(Errors.REPLY_SUGGESTION_FAILED);
+    }
+
+    return { comment: comment.slice(0, DTO.MAX_REPLY_LENGTH) };
+  }
 
   /**
    * Listado desde nuestra copia local, no desde Google: el dashboard no puede depender

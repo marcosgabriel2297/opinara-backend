@@ -4,7 +4,11 @@ import { BusinessMembersRepository, BusinessesRepository } from '@shared/models/
 import { BusinessMemberRole } from '@shared/models/enums/business';
 import { BusinessesService } from './businesses.service';
 
-const USER = { urn: 'urn:user:44444444-4444-4444-4444-444444444444', email: 'due@no.test' };
+const USER = {
+  urn: 'urn:user:44444444-4444-4444-4444-444444444444',
+  email: 'due@no.test',
+  sessionUrn: 'urn:session:44444444-4444-4444-4444-444444444444',
+};
 
 const buildService = async (overrides: {
   business?: Partial<jest.Mocked<BusinessesRepository>>;

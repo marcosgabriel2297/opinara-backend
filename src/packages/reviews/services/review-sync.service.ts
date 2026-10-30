@@ -10,6 +10,7 @@ import {
   GoogleReviewsAdapter,
   throwAsDomainError,
 } from '@shared/integrations/google/exports';
+import { LocationSource } from '@shared/models/enums/location';
 import { GoogleTokenService } from '@packages/google';
 import { Location, LocationsService } from '@packages/locations';
 
@@ -131,6 +132,12 @@ export class ReviewSyncService {
    * reseñas anteriores al ultimo corte. La primera corrida es completa.
    */
   async syncLocation(location: Location, accessToken?: string, options: { full?: boolean } = {}): Promise<SyncResult> {
+    // Una sucursal cargada a mano no existe para Google: sus identificadores son de relleno.
+    // Se corta aca -y no en la llamada- para no gastar cuota en un 404 seguro.
+    if (location.source === LocationSource.MANUAL) {
+      Exceptions.badRequest(Errors.LOCATION_NOT_SYNCABLE);
+    }
+
     const startedAt = new Date();
     const token = accessToken ?? (await this.tokenService.getAccessToken(location.businessUrn));
     const cursor = this.cursorFor(location, options.full);

@@ -1,7 +1,7 @@
 {
   "name": "opinara-backend",
   "version": "0.0.1",
-  "description": "Backend SaaS de reputacion: Google Business Profile, reviews, feedback y campa\u00f1as QR",
+  "description": "Backend SaaS de reputacion: Google Business Profile, reviews, feedback y campañas QR",
   "private": true,
   "license": "UNLICENSED",
   "packageManager": "yarn@4.17.0",
@@ -16,6 +16,8 @@
     "db:down": "docker compose down",
     "mongo:local": "node scripts/mongo-local.js",
     "seed": "ts-node -r tsconfig-paths/register scripts/seed.ts",
+    "admin:create": "ts-node -r tsconfig-paths/register scripts/create-admin.ts",
+    "db:quitar-opiniones": "ts-node -r tsconfig-paths/register scripts/migrations/2026-10-25-quitar-opiniones-internas.ts",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -23,6 +25,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
     "@nestjs/axios": "^4.0.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/config": "^4.0.0",

@@ -10,14 +10,14 @@ const THIRTY_DAYS = 2592000;
 const ONE_MINUTE_MS = 60000;
 
 export default {
-  Password: {
-    /** Coste de bcrypt: balance entre seguridad y latencia del login. */
-    SaltRounds: 12,
-  },
   Token: {
     // En segundos: evita el parsing ambiguo de strings tipo '1d' y sirve tal cual para `expiresIn`.
     AccessExpiresIn: toSeconds(process.env.JWT_ACCESS_EXPIRES_IN_SECONDS, ONE_DAY),
     RefreshExpiresIn: toSeconds(process.env.JWT_REFRESH_EXPIRES_IN_SECONDS, THIRTY_DAYS),
+  },
+  PasswordReset: {
+    /** Cuanto dura el link del mail. */
+    ExpiresInSeconds: toSeconds(process.env.PASSWORD_RESET_EXPIRES_IN_SECONDS, 3600),
   },
   Throttle: {
     // Limite propio, mas estricto que el global, para los endpoints que reciben credenciales.

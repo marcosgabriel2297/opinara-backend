@@ -1,11 +1,15 @@
 # Estado del proyecto — Opinara Backend
 
-> Última actualización: **2026-09-13** (MVP completo, fases 0-7). Documento de traspaso entre sesiones de trabajo.
+> Última actualización: **2026-09-17** (MVP completo, fases 0-7, + alta manual de sucursales). Documento de traspaso entre sesiones de trabajo.
 > El plan técnico completo está en `~/.claude/plans/en-el-root-del-smooth-turtle.md`.
+> La puesta en marcha con el primer local real (trámite con Google, deploy, alta del negocio) vive
+> aparte, en [`PUESTA-EN-MARCHA.md`](PUESTA-EN-MARCHA.md).
 
 ## Dónde quedamos
 
 **MVP completo: fases 0 a 7 terminadas y probadas.** Lo que sigue es post-MVP (ver el final de este documento).
+
+Después del MVP se agregó el **alta manual de sucursales** (`POST /businesses/:businessUrn/locations`), para poder operar el circuito del QR con un local real antes de que Google apruebe el acceso a las APIs. Ver *Alta manual de sucursales*, más abajo.
 
 | Fase | Qué incluye | Estado |
 |---|---|---|
@@ -20,7 +24,7 @@
 
 Post-MVP (fuera de alcance por ahora): notificaciones Pub/Sub, BullMQ, `SocialConnection`, IA, analytics, billing.
 
-**Estado del repo: todo el trabajo está SIN COMMITEAR** (14 entradas nuevas en `git status`). Hay un solo commit inicial en `master`.
+**Estado del repo:** `master` limpio, MVP commiteado. Docker y Mongo local funcionando (`yarn db:up`), base de desarrollo cargada con `yarn seed`.
 
 ## Cómo levantarlo
 
@@ -32,7 +36,7 @@ yarn start:dev                # dev
 yarn lint && yarn test && yarn build   # verificación completa: 180 tests en verde
 ```
 
-No hay Mongo ni Docker instalados en esta máquina: los tests usan `mongodb-memory-server` (no necesitan nada), y para `start:dev` hace falta un `DATABASE_URI` (Atlas, como camelus).
+Mongo corre en Docker (`yarn db:up`, `mongo:7` en `127.0.0.1:27017`). Los tests no lo necesitan: usan `mongodb-memory-server`.
 
 ## Convenciones adoptadas (heredadas de camelus/core-backend)
 
@@ -58,7 +62,8 @@ No hay Mongo ni Docker instalados en esta máquina: los tests usan `mongodb-memo
 ## Endpoints implementados
 
 ```
-POST   /api/auth/register | login | refresh          GET /api/auth/me
+POST   /api/auth/login | refresh | password/change   GET /api/auth/me
+POST   /api/admin/auth/login | users                 (alta de usuarios por el admin)
 GET    /api/auth/google/callback                     (público, throttled)
 
 POST   /api/businesses                               GET /api/businesses
@@ -71,6 +76,7 @@ GET    /api/businesses/:businessUrn/google/accounts
 GET    /api/businesses/:businessUrn/google/locations?accountName=accounts/{id}
 POST   /api/businesses/:businessUrn/google/locations/import   (OWNER | ADMIN)
 
+POST   /api/businesses/:businessUrn/locations                 (OWNER | ADMIN, alta manual)
 GET    /api/businesses/:businessUrn/locations
 GET    /api/businesses/:businessUrn/locations/:locationUrn
 
@@ -83,11 +89,8 @@ POST   /api/businesses/:businessUrn/campaigns                            (OWNER 
 GET    /api/businesses/:businessUrn/campaigns
 GET    /api/businesses/:businessUrn/campaigns/:campaignUrn
 POST   /api/businesses/:businessUrn/campaigns/:campaignUrn/qr            (OWNER | ADMIN)
-GET    /api/businesses/:businessUrn/feedback
 
-GET    /api/public/r/:businessSlug/:campaignSlug                         (público)
-POST   /api/public/r/:businessSlug/:campaignSlug/feedback                (público)
-POST   /api/public/r/:businessSlug/:campaignSlug/google-click            (público)
+GET    /api/public/r/:businessSlug/:campaignSlug                         (público, 302 a Google)
 
 POST   /api/businesses/:businessUrn/google/sync                          (OWNER | ADMIN)
 POST   /api/businesses/:businessUrn/locations/:locationUrn/reviews/sync  (OWNER | ADMIN)
@@ -125,3 +128,59 @@ Todos tienen test de regresión.
 ## Bloqueante externo
 
 Las GBP APIs necesitan **aprobación de Google** (formulario "Application for Basic API Access"; requiere un GBP verificado hace 60+ días y sitio web). Hasta que la aprueben la cuota es **0 QPM** y no se puede probar contra la cuenta real. Las fases 4 y 5 se pueden escribir y testear completas igual, con dobles. **Conviene mandar el formulario cuanto antes: es el único bloqueante que no depende de nosotros.**
+
+## QR directo a Google
+
+Cambiado el 2026-10-25. Antes el QR abría una landing con formulario propio (calificación + comentario)
+y recién después ofrecía el link a Google: pedirle al cliente que opine dos veces es perderlo.
+
+- `GET /api/public/r/:businessSlug/:campaignSlug` cuenta y responde **302** al `newReviewUri` de la
+  sucursal.
+- **Opiniones internas eliminadas por completo**: el paquete `feedback` (entidad, `GET
+  /businesses/:urn/feedback`, `POST …/feedback`), `POST …/google-click`, `FeedbackSource` y el
+  contador `stats.feedbacks`. Lo que quedaba en la base se borra con `yarn db:quitar-opiniones
+  --apply` (por defecto solo muestra; es idempotente). **Ya aplicado en `opinara` y
+  `opinara_piloto` el 2026-10-25; falta correrlo en producción** si se despliega con datos viejos.
+  Igual `toPublic` arma `stats` campo por campo, así que no depende de que se haya corrido.
+- **Métricas**: cada escaneo suma `scans` y `googleClicks` en un solo `$inc` atómico, sobre lo que
+  ya había. `HEAD` no cuenta; `Cache-Control: no-store` para que el 302 no quede cacheado y se
+  pierdan escaneos.
+- **El QR impreso no cambia**: sigue apuntando al frontend (`/r/:b/:c`), que hace
+  `location.replace` al endpoint del backend. Los QR ya impresos siguen andando, y el `replace`
+  evita que "atrás" desde Google recargue la página y cuente otro escaneo (el pendiente 1 de
+  `PUESTA-EN-MARCHA.md`).
+- Si la campaña no sirve, redirige a `{PUBLIC_APP_BASE_URL}/r/no-disponible`, también ante un
+  error interno (se loguea).
+- Probado con curl: 15 escaneos concurrentes → +15 exactos; histórico `184/41` → `185/42`;
+  Mongo detenido → redirección a "no disponible" a los ~30 s (timeout de selección del driver).
+
+## Alta manual de sucursales
+
+Agregado el 2026-09-17, fuera del plan de fases, para poder salir a probar con un local real
+mientras Google aprueba el acceso a las APIs (la aprobación es por proyecto de Cloud y tarda).
+
+**Por qué se puede:** el circuito del QR no usa la API de Google. Escaneo, feedback propio y
+salto a Google necesitan un solo dato: el link de reseña, que se arma con el Place ID
+(`https://search.google.com/local/writereview?placeid=...`), y el Place ID sale de Maps.
+
+**Cómo está hecho:**
+
+- `POST /businesses/:businessUrn/locations` (OWNER | ADMIN) con `title`, `placeId` y, opcionales,
+  `storeCode` y `address`. El backend deriva `newReviewUri` y `mapsUri` del `placeId`.
+- `Location.source` (`GOOGLE` | `MANUAL`) distingue las dos vías. Los identificadores de Google
+  de una sucursal manual son de relleno (`locations/manual-<uuid>`): así el resto del sistema no
+  tiene que chequear campos opcionales en todos lados.
+- **Las manuales no se sincronizan.** Quedan fuera de `findAllActive` y `findActiveForBusiness`
+  (el cron y `POST /google/sync`), y `syncLocation` corta con `400 LOCATION_NOT_SYNCABLE`. Pedirle
+  reseñas a Google con ids de relleno sería un 404 seguro por sucursal y por corrida, gastando la
+  cuota compartida del proyecto.
+- **La importación adopta la manual por `placeId`** en vez de duplicarla: conserva el `urn`, así
+  que las campañas y los QR ya impresos siguen funcionando, y pasa a `source: GOOGLE`.
+- Índice único parcial `(businessUrn, placeId)`: es lo que evita el duplicado cuando dos altas del
+  mismo local entran a la vez (probado con 5 pedidos concurrentes: 1 × 201, 4 × 409).
+
+**Compatibilidad con la base existente:** las locations anteriores no tienen `source`. Los filtros
+de sincronización excluyen por `$ne: MANUAL` (no por `source: GOOGLE`) y `toPublicLocation` completa
+`GOOGLE` cuando el campo falta, así que no hace falta migrar nada.
+
+**Lo que sigue esperando a Google:** traer las reseñas y responderlas. Eso no tiene atajo.

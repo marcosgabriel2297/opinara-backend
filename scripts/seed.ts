@@ -12,15 +12,14 @@
  */
 import { createCipheriv, randomBytes } from 'crypto';
 
-import * as bcrypt from 'bcrypt';
-import { createHash } from 'crypto';
 import mongoose from 'mongoose';
 
 import '@shared/environment';
 import { EncryptedValue } from '@shared/common/crypto';
+import { hashPassword } from '@shared/common/password';
 import { Urn } from '@shared/common/urn';
 import { BusinessMemberRole, BusinessMemberStatus, BusinessStatus } from '@shared/models/enums/business';
-import { CampaignStatus, FeedbackSource } from '@shared/models/enums/campaign';
+import { CampaignStatus } from '@shared/models/enums/campaign';
 import { GoogleConnectionStatus } from '@shared/models/enums/google';
 import { UserStatus } from '@shared/models/enums/user';
 import {
@@ -32,6 +31,7 @@ import {
   Business as BusinessModel,
 } from '@shared/models/business';
 import { USER_ENTITY, User, UserSchema } from '@shared/models/user';
+import { ADMIN_ENTITY, Admin, AdminSchema } from '@packages/admin';
 import {
   CAMPAIGN_ENTITY,
   Campaign,
@@ -40,7 +40,6 @@ import {
   QRCode,
   QRCodeSchema,
 } from '@packages/campaigns';
-import { FEEDBACK_ENTITY, Feedback, FeedbackSchema } from '@packages/feedback';
 import { LOCATION_ENTITY, Location, LocationSchema } from '@packages/locations';
 import {
   GOOGLE_CONNECTION_ENTITY,
@@ -60,10 +59,6 @@ if (!uri || !encryptionKey) {
   console.error('Falta DATABASE_URI o TOKEN_ENCRYPTION_KEY en .env.dev');
   process.exit(1);
 }
-
-/** Mismo pre-hash que usa el servicio de autenticacion (bcrypt trunca a 72 bytes). */
-const hashPassword = (plain: string): Promise<string> =>
-  bcrypt.hash(createHash('sha256').update(plain, 'utf8').digest('base64'), 12);
 
 /** Mismo formato que `CryptoService`: AES-256-GCM con version de clave. */
 const encrypt = (plaintext: string): EncryptedValue => {
@@ -114,22 +109,10 @@ const REVIEWS_PELUQUERIA = [
   { rating: 5, comment: 'Muy buena onda todo el equipo.', author: 'Ignacio Prieto', days: 26 },
 ];
 
-const FEEDBACK = [
-  { rating: 5, comment: 'Todo perfecto, gracias!', days: 1 },
-  { rating: 4, comment: 'Muy bien, solo que habia mucha cola.', days: 1 },
-  { rating: 2, comment: 'El pedido llego frio.', days: 2 },
-  { rating: 5, comment: null, days: 3 },
-  { rating: 5, comment: 'La atencion de Carla es excelente.', days: 4 },
-  { rating: 3, comment: 'Esperaba mas por el precio.', days: 6 },
-  { rating: 5, comment: null, days: 7 },
-  { rating: 1, comment: 'Me equivocaron el pedido dos veces.', days: 9 },
-  { rating: 4, comment: 'Rico el cafe.', days: 11 },
-  { rating: 5, comment: 'Volveria mil veces.', days: 13 },
-];
-
 async function seed(): Promise<void> {
   const connection = await mongoose.createConnection(uri as string, { dbName }).asPromise();
 
+  const Admins = connection.model(Admin.name, AdminSchema);
   const Users = connection.model(User.name, UserSchema);
   const Businesses = connection.model(BusinessModel.name, BusinessSchema);
   const Members = connection.model(BusinessMember.name, BusinessMemberSchema);
@@ -138,11 +121,11 @@ async function seed(): Promise<void> {
   const Reviews = connection.model(Review.name, ReviewSchema);
   const Campaigns = connection.model(Campaign.name, CampaignSchema);
   const QRCodes = connection.model(QRCode.name, QRCodeSchema);
-  const Feedbacks = connection.model(Feedback.name, FeedbackSchema);
 
   console.log(`Limpiando la base "${dbName}"...`);
   // Uno por uno y no con un map: los modelos tienen tipos distintos y TypeScript no puede
   // unificar las firmas de `deleteMany` de un array heterogeneo.
+  await Admins.deleteMany({});
   await Users.deleteMany({});
   await Businesses.deleteMany({});
   await Members.deleteMany({});
@@ -151,11 +134,18 @@ async function seed(): Promise<void> {
   await Reviews.deleteMany({});
   await Campaigns.deleteMany({});
   await QRCodes.deleteMany({});
-  await Feedbacks.deleteMany({});
 
   const password = await hashPassword(PASSWORD);
   const user = async (email: string, name: string) =>
     Users.create({ urn: Urn.createUUID(USER_ENTITY), email, name, password, status: UserStatus.ACTIVE });
+
+  await Admins.create({
+    urn: Urn.createUUID(ADMIN_ENTITY),
+    email: 'admin@opinara.test',
+    name: 'Admin Opinara',
+    password,
+    status: UserStatus.ACTIVE,
+  });
 
   const lucia = await user('dueno@opinara.test', 'Lucía Fernández');
   const martin = await user('gerente@opinara.test', 'Martín Sosa');
@@ -268,7 +258,7 @@ async function seed(): Promise<void> {
     name: string,
     slug: string,
     createdBy: string,
-    stats: { scans: number; feedbacks: number; googleClicks: number },
+    stats: { scans: number; googleClicks: number },
   ) => {
     const created = await Campaigns.create({
       urn: Urn.createUUID(CAMPAIGN_ENTITY),
@@ -294,32 +284,9 @@ async function seed(): Promise<void> {
     return created;
   };
 
-  const mostrador = await campaign(centro, 'Mostrador', 'mostrador', lucia.urn, {
-    scans: 184,
-    feedbacks: 62,
-    googleClicks: 41,
-  });
-  const mesas = await campaign(palermo, 'Mesas Palermo', 'mesas-palermo', martin.urn, {
-    scans: 97,
-    feedbacks: 28,
-    googleClicks: 19,
-  });
-  await campaign(salon, 'Recepción', 'recepcion', diego.urn, { scans: 45, feedbacks: 17, googleClicks: 12 });
-
-  await Promise.all(
-    FEEDBACK.map((data, index) =>
-      Feedbacks.create({
-        urn: Urn.createUUID(FEEDBACK_ENTITY),
-        businessUrn: cafe.urn,
-        locationUrn: index % 3 === 0 ? palermo.urn : centro.urn,
-        campaignUrn: index % 3 === 0 ? mesas.urn : mostrador.urn,
-        rating: data.rating,
-        comment: data.comment ?? undefined,
-        source: FeedbackSource.QR,
-        createdAt: daysAgo(data.days),
-      }),
-    ),
-  );
+  await campaign(centro, 'Mostrador', 'mostrador', lucia.urn, { scans: 184, googleClicks: 184 });
+  await campaign(palermo, 'Mesas Palermo', 'mesas-palermo', martin.urn, { scans: 97, googleClicks: 97 });
+  await campaign(salon, 'Recepción', 'recepcion', diego.urn, { scans: 45, googleClicks: 45 });
 
   const counts = {
     usuarios: await Users.countDocuments(),
@@ -329,7 +296,6 @@ async function seed(): Promise<void> {
     sucursales: await Locations.countDocuments(),
     reseñas: await Reviews.countDocuments(),
     campañas: await Campaigns.countDocuments(),
-    feedback: await Feedbacks.countDocuments(),
   };
 
   console.log('\nDatos cargados:');
@@ -342,13 +308,15 @@ async function seed(): Promise<void> {
   console.log('  gerente@opinara.test      ADMIN  de Café de la Esquina');
   console.log('  empleada@opinara.test     MEMBER de Café de la Esquina');
   console.log('  peluqueria@opinara.test   OWNER  de Peluquería Estilo (para probar aislamiento)');
+  console.log('\nAdministrador (POST /api/admin/auth/login, mismo password)');
+  console.log('  admin@opinara.test');
 
   console.log('\nIdentificadores utiles');
   console.log(`  business  ${cafe.urn}`);
   console.log(`  location  ${centro.urn}  (${centro.title})`);
   console.log(`  campaign  ${mostrador.urn}`);
 
-  console.log('\nLanding publica del QR');
+  console.log('\nQR publico (302 a Google)');
   console.log(`  GET /api/public/r/${cafe.slug}/mostrador`);
   console.log(`  GET /api/public/r/${peluqueria.slug}/recepcion`);
   console.log('');

@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   InternalServerErrorException,
   NotFoundException,
+  PayloadTooLargeException,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -29,6 +30,10 @@ export class Exceptions {
 
   static notFound(errorKey: Errors): never {
     throw new NotFoundException(ErrorMessages[errorKey], errorKey);
+  }
+
+  static payloadTooLarge(errorKey: Errors): never {
+    throw new PayloadTooLargeException(ErrorMessages[errorKey], errorKey);
   }
 
   static conflict(errorKey: Errors): never {

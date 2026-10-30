@@ -1,1 +1,4 @@
-export { CampaignParamsDto as CampaignParams } from './campaign-params.dto';
+export {
+  BusinessSlugParamsDto as BusinessSlugParams,
+  CampaignParamsDto as CampaignParams,
+} from './campaign-params.dto';

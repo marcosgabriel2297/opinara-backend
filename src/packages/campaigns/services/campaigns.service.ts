@@ -19,7 +19,9 @@ import {
   PublicCampaign,
   QR_CODE_ENTITY,
   QRCodesRepository,
+  ScanEventsRepository,
 } from '../models';
+import { lastMondays } from './scan-weeks';
 
 export interface GeneratedQr {
   targetUrl: string;
@@ -27,13 +29,46 @@ export interface GeneratedQr {
   pngDataUrl: string;
 }
 
+export interface ScansByWeek {
+  /** Una entrada por semana, de la más vieja a la actual (lunes en la zona horaria del negocio). */
+  weeks: { week: string; scans: number }[];
+  /** Desde cuándo hay escaneos con fecha. Los anteriores están en el total pero no acá. */
+  trackedSince: Date | null;
+}
+
+const DEFAULT_TIMEZONE = 'America/Argentina/Buenos_Aires';
+
 @Injectable()
 export class CampaignsService {
   constructor(
     private readonly campaignsRepository: CampaignsRepository,
     private readonly qrCodesRepository: QRCodesRepository,
+    private readonly scanEventsRepository: ScanEventsRepository,
     private readonly locationsService: LocationsService,
   ) {}
+
+  /**
+   * Escaneos por semana del negocio entero o de una campaña. Las semanas sin escaneos vienen en
+   * 0: el gráfico no tiene que adivinar huecos.
+   */
+  async scansByWeek(business: Business, weeks: number, campaignUrn?: string): Promise<ScansByWeek> {
+    if (campaignUrn !== undefined) {
+      await this.getOwned(business.urn, campaignUrn);
+    }
+
+    const timezone = business.timezone ?? DEFAULT_TIMEZONE;
+    const mondays = lastMondays(timezone, weeks);
+    // Un día de margen antes del primer lunes: el filtro es por instante y la semana por zona.
+    const since = new Date(Date.parse(`${mondays[0]}T00:00:00Z`) - 24 * 60 * 60 * 1000);
+
+    const [counts, trackedSince] = await Promise.all([
+      this.scanEventsRepository.weekly(business.urn, since, timezone, campaignUrn),
+      this.scanEventsRepository.firstScanAt(business.urn, campaignUrn),
+    ]);
+    const byWeek = new Map(counts.map((count) => [count.week, count.scans]));
+
+    return { weeks: mondays.map((week) => ({ week, scans: byWeek.get(week) ?? 0 })), trackedSince };
+  }
 
   async create(business: Business, user: AuthenticatedUser, payload: DTO.CreateCampaign): Promise<PublicCampaign> {
     const location = await this.locationsService.getOwned(business.urn, payload.locationUrn);
@@ -64,7 +99,7 @@ export class CampaignsService {
         name: payload.name.trim(),
         slug,
         status: CampaignStatus.ACTIVE,
-        stats: { scans: 0, feedbacks: 0, googleClicks: 0 },
+        stats: { scans: 0, googleClicks: 0 },
         createdByUserUrn: user.urn,
       });
 
@@ -138,7 +173,8 @@ export class CampaignsService {
       slug: campaign.slug,
       locationUrn: campaign.locationUrn,
       status: campaign.status,
-      stats: campaign.stats,
+      // Campo por campo: las campañas viejas todavia tienen `feedbacks` guardado en la base.
+      stats: { scans: campaign.stats.scans, googleClicks: campaign.stats.googleClicks },
       targetUrl: this.targetUrlFor(business, campaign),
       createdAt: campaign.createdAt,
     };

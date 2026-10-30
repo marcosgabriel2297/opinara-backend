@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 
+import { LocationSource } from '@shared/models/enums/location';
 import { Entity } from '@shared/repositories';
 
 export const LOCATION_ENTITY = 'location';
@@ -53,6 +54,10 @@ export class Location implements Entity {
   @Prop({ required: true, default: false })
   hasVoiceOfMerchant!: boolean;
 
+  /** Google o alta manual. Las manuales no se sincronizan: sus ids de Google son de relleno. */
+  @Prop({ required: true, enum: LocationSource, default: LocationSource.GOOGLE, index: true })
+  source!: LocationSource;
+
   @Prop({ required: true, default: true })
   isActive!: boolean;
 
@@ -69,8 +74,16 @@ export const LocationSchema = SchemaFactory.createForClass(Location);
 // Una misma location de Google no se importa dos veces en el mismo business.
 LocationSchema.index({ businessUrn: 1, googleLocationName: 1 }, { unique: true });
 
+// Un mismo local fisico tampoco: es lo que evita que un alta manual duplique una sucursal
+// ya importada -y al reves- porque el placeId es el unico identificador comun a las dos vias.
+LocationSchema.index(
+  { businessUrn: 1, placeId: 1 },
+  { unique: true, partialFilterExpression: { placeId: { $type: 'string' } } },
+);
+
 export interface PublicLocation {
   urn: string;
+  source: LocationSource;
   title: string;
   storeCode?: string;
   address?: string;
@@ -85,6 +98,9 @@ export interface PublicLocation {
 
 export const toPublicLocation = (location: Location): PublicLocation => ({
   urn: location.urn,
+  // Las locations anteriores a este campo son todas importadas de Google: el alta manual
+  // no existia. Se completa aca para que la API nunca devuelva el campo vacio.
+  source: location.source ?? LocationSource.GOOGLE,
   title: location.title,
   storeCode: location.storeCode,
   address: location.address,

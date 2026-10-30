@@ -17,12 +17,28 @@ export enum Errors {
   WRONG_CREDENTIALS = 'WRONG_CREDENTIALS',
   INVALID_REFRESH_TOKEN = 'INVALID_REFRESH_TOKEN',
   USER_INACTIVE = 'USER_INACTIVE',
+  INVALID_RESET_TOKEN = 'INVALID_RESET_TOKEN',
+  PASSWORD_CHANGE_REQUIRED = 'PASSWORD_CHANGE_REQUIRED',
+  WRONG_CURRENT_PASSWORD = 'WRONG_CURRENT_PASSWORD',
+  SAME_PASSWORD = 'SAME_PASSWORD',
 
   // Businesses
   BUSINESS_NOT_FOUND = 'BUSINESS_NOT_FOUND',
   BUSINESS_SLUG_ALREADY_EXISTS = 'BUSINESS_SLUG_ALREADY_EXISTS',
   BUSINESS_FORBIDDEN = 'BUSINESS_FORBIDDEN',
   BUSINESS_SUSPENDED = 'BUSINESS_SUSPENDED',
+  LOGO_INVALID_IMAGE = 'LOGO_INVALID_IMAGE',
+  LOGO_TOO_LARGE = 'LOGO_TOO_LARGE',
+  LOGO_NOT_FOUND = 'LOGO_NOT_FOUND',
+
+  // Miembros e invitaciones
+  MEMBER_NOT_FOUND = 'MEMBER_NOT_FOUND',
+  MEMBER_ALREADY_EXISTS = 'MEMBER_ALREADY_EXISTS',
+  MEMBER_ROLE_NOT_ALLOWED = 'MEMBER_ROLE_NOT_ALLOWED',
+  INVITATION_NOT_FOUND = 'INVITATION_NOT_FOUND',
+  INVITATION_INVALID = 'INVITATION_INVALID',
+  INVITATION_EMAIL_MISMATCH = 'INVITATION_EMAIL_MISMATCH',
+  INVITEE_NOT_REGISTERED = 'INVITEE_NOT_REGISTERED',
 
   // Google
   GOOGLE_NOT_CONFIGURED = 'GOOGLE_NOT_CONFIGURED',
@@ -40,10 +56,13 @@ export enum Errors {
   // Locations / reviews
   LOCATION_NOT_FOUND = 'LOCATION_NOT_FOUND',
   LOCATION_ALREADY_IMPORTED = 'LOCATION_ALREADY_IMPORTED',
+  LOCATION_NOT_SYNCABLE = 'LOCATION_NOT_SYNCABLE',
   REVIEW_NOT_FOUND = 'REVIEW_NOT_FOUND',
   REVIEW_REPLY_NOT_FOUND = 'REVIEW_REPLY_NOT_FOUND',
+  REPLY_SUGGESTIONS_UNAVAILABLE = 'REPLY_SUGGESTIONS_UNAVAILABLE',
+  REPLY_SUGGESTION_FAILED = 'REPLY_SUGGESTION_FAILED',
 
-  // Campañas / feedback
+  // Campañas
   CAMPAIGN_NOT_FOUND = 'CAMPAIGN_NOT_FOUND',
   CAMPAIGN_SLUG_ALREADY_EXISTS = 'CAMPAIGN_SLUG_ALREADY_EXISTS',
   CAMPAIGN_INACTIVE = 'CAMPAIGN_INACTIVE',
@@ -66,12 +85,26 @@ export const ErrorMessages: Record<Errors, string> = {
   [Errors.USER_NOT_FOUND]: 'User not found',
   [Errors.WRONG_CREDENTIALS]: 'Invalid email or password',
   [Errors.INVALID_REFRESH_TOKEN]: 'The refresh token is invalid or expired',
+  [Errors.INVALID_RESET_TOKEN]: 'The password reset link is invalid, expired or already used',
   [Errors.USER_INACTIVE]: 'The user is not active',
+  [Errors.PASSWORD_CHANGE_REQUIRED]: 'The temporary password must be changed before continuing',
+  [Errors.WRONG_CURRENT_PASSWORD]: 'The current password is not correct',
+  [Errors.SAME_PASSWORD]: 'The new password must be different from the current one',
 
   [Errors.BUSINESS_NOT_FOUND]: 'Business not found',
   [Errors.BUSINESS_SLUG_ALREADY_EXISTS]: 'The business slug is already taken',
   [Errors.BUSINESS_FORBIDDEN]: 'You do not have access to this business',
   [Errors.BUSINESS_SUSPENDED]: 'The business is suspended',
+  [Errors.LOGO_INVALID_IMAGE]: 'The logo must be a PNG, JPEG or WebP image',
+  [Errors.LOGO_TOO_LARGE]: 'The logo is too large',
+  [Errors.LOGO_NOT_FOUND]: 'The business has no logo',
+  [Errors.MEMBER_NOT_FOUND]: 'The member was not found in this business',
+  [Errors.MEMBER_ALREADY_EXISTS]: 'That email already belongs to a member of this business',
+  [Errors.MEMBER_ROLE_NOT_ALLOWED]: 'Your role cannot perform this change',
+  [Errors.INVITATION_NOT_FOUND]: 'The invitation was not found',
+  [Errors.INVITATION_INVALID]: 'The invitation is expired, revoked or already used',
+  [Errors.INVITATION_EMAIL_MISMATCH]: 'The invitation is for a different email',
+  [Errors.INVITEE_NOT_REGISTERED]: 'There is no account with that email, ask an administrator to create it',
 
   [Errors.GOOGLE_NOT_CONFIGURED]: 'Google OAuth is not configured on this server',
   [Errors.GOOGLE_CONNECTION_NOT_FOUND]: 'The business has no Google Business Profile connection',
@@ -87,8 +120,11 @@ export const ErrorMessages: Record<Errors, string> = {
 
   [Errors.LOCATION_NOT_FOUND]: 'Location not found',
   [Errors.LOCATION_ALREADY_IMPORTED]: 'The location is already imported',
+  [Errors.LOCATION_NOT_SYNCABLE]: 'The location was created manually and is not linked to Google yet',
   [Errors.REVIEW_NOT_FOUND]: 'Review not found',
   [Errors.REVIEW_REPLY_NOT_FOUND]: 'The review has no reply',
+  [Errors.REPLY_SUGGESTIONS_UNAVAILABLE]: 'Reply suggestions are not configured on this server',
+  [Errors.REPLY_SUGGESTION_FAILED]: 'Could not suggest a reply right now, write it or try again',
 
   [Errors.CAMPAIGN_NOT_FOUND]: 'Campaign not found',
   [Errors.CAMPAIGN_SLUG_ALREADY_EXISTS]: 'The campaign slug is already taken for this business',

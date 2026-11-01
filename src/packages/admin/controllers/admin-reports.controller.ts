@@ -13,7 +13,14 @@ export class AdminReportsController {
     private readonly stats: Services.Stats,
     private readonly auditService: Services.Audit,
     private readonly scans: Services.Scans,
+    private readonly google: Services.Google,
   ) {}
+
+  /** Cómo anda la integración con Google: conexiones revocadas y sucursales sin sincronizar. */
+  @Get('/google/health')
+  googleHealth() {
+    return this.google.health();
+  }
 
   /** La pantalla de inicio del panel: totales y evolución por semana. */
   @Get('/stats/overview')

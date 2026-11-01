@@ -1,7 +1,7 @@
 export { AdminAccountsService as Accounts } from './admin-accounts.service';
 export type { AdminSession, CreatedAdmin } from './admin-accounts.service';
 export { AdminUsersService as Users } from './admin-users.service';
-export type { AdminUser, CreatedUser } from './admin-users.service';
+export type { AdminUser, AdminUserDetail, CreatedUser } from './admin-users.service';
 export { AdminReportsService as Reports } from './admin-reports.service';
 export type { AdminReview } from './admin-reports.service';
 export { AdminStatsService as Stats } from './admin-stats.service';
@@ -12,3 +12,5 @@ export { AdminScansService as Scans } from './admin-scans.service';
 export type { ScanRankingRow, ScansReport } from './admin-scans.service';
 export { AdminAuditService as Audit } from './admin-audit.service';
 export type { AuditTarget } from './admin-audit.service';
+export { AdminGoogleService as Google } from './admin-google.service';
+export type { GoogleHealth, GoogleIssue } from './admin-google.service';

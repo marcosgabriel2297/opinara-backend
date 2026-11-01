@@ -17,6 +17,11 @@ export class AdminUsersController {
     return this.service.listUsers(query);
   }
 
+  @Get('/:userUrn')
+  detail(@Param('userUrn') userUrn: string) {
+    return this.service.detail(userUrn);
+  }
+
   @Post()
   create(@GetAdmin() admin: AuthenticatedAdmin, @Body() payload: DTO.CreateUser) {
     return this.service.createUser(admin, payload);

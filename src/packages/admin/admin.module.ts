@@ -34,6 +34,7 @@ import * as Services from './services';
     Services.Businesses,
     Services.Scans,
     Services.Audit,
+    Services.Google,
     AdminsRepository,
     AdminReviewsRepository,
     AdminGuard,

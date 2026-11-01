@@ -347,17 +347,35 @@ export class AdminBusinessesService {
     return new Map(rows.map(({ _id, ...stats }) => [_id, stats]));
   }
 
-  /** La conexión de Google de cada negocio (hay una por negocio, ver su índice único). Sin tokens. */
+  /**
+   * La conexión de Google de cada negocio (hay una por negocio, ver su índice único). Sin tokens.
+   *
+   * `lastSyncAt` es la sincronización más reciente de sus sucursales: la conexión tiene su propio
+   * `lastSyncAt`, pero la sincronización nunca lo escribe (lo marca en cada sucursal).
+   */
   private async connections(urns: string[]): Promise<Map<string, GoogleState>> {
-    const rows = await this.connectionModel
-      .find({ businessUrn: { $in: urns } })
-      .select('businessUrn status connectedAt lastSyncAt')
-      .lean<Pick<GoogleConnection, 'businessUrn' | 'status' | 'connectedAt' | 'lastSyncAt'>[]>()
-      .exec();
+    const [rows, synced] = await Promise.all([
+      this.connectionModel
+        .find({ businessUrn: { $in: urns } })
+        .select('businessUrn status connectedAt')
+        .lean<Pick<GoogleConnection, 'businessUrn' | 'status' | 'connectedAt'>[]>()
+        .exec(),
+      this.locationModel
+        .aggregate<{ _id: string; lastSyncAt: Date | null }>([
+          { $match: { businessUrn: { $in: urns } } },
+          { $group: { _id: '$businessUrn', lastSyncAt: { $max: '$lastReviewSyncAt' } } },
+        ])
+        .exec(),
+    ]);
+    const lastSync = new Map(synced.map((row) => [row._id, row.lastSyncAt]));
     return new Map(
       rows.map((row) => [
         row.businessUrn,
-        { status: row.status, connectedAt: row.connectedAt ?? null, lastSyncAt: row.lastSyncAt ?? null },
+        {
+          status: row.status,
+          connectedAt: row.connectedAt ?? null,
+          lastSyncAt: lastSync.get(row.businessUrn) ?? null,
+        },
       ]),
     );
   }

@@ -8,8 +8,8 @@ import { Paginated, paginate } from '@shared/common/interfaces';
 import { generatePassword, hashPassword } from '@shared/common/password';
 import { Urn } from '@shared/common/urn';
 import { Business, BusinessMember } from '@shared/models/business';
-import { SessionsRepository } from '@shared/models/session';
-import { BusinessMemberRole, BusinessMemberStatus } from '@shared/models/enums/business';
+import { Session, SessionsRepository } from '@shared/models/session';
+import { BusinessMemberRole, BusinessMemberStatus, BusinessStatus } from '@shared/models/enums/business';
 import { UserStatus } from '@shared/models/enums/user';
 import { PublicUser, USER_ENTITY, User, UsersRepository, toPublicUser } from '@shared/models/user';
 import { escapeRegex, isDuplicateKeyError } from '@shared/utils';
@@ -31,6 +31,21 @@ export interface AdminUser extends PublicUser {
   businesses: { urn: string; name: string; role: BusinessMemberRole }[];
 }
 
+export interface AdminUserDetail extends PublicUser {
+  businesses: { urn: string; name: string; role: BusinessMemberRole; status: BusinessStatus; since: Date | null }[];
+  sessions: {
+    /** Abiertas ahora: sin revocar y sin vencer. */
+    active: number;
+    /** El último inicio de sesión (cuándo se abrió la sesión más reciente). */
+    lastLoginAt: Date | null;
+    /**
+     * Aproximado: la última vez que la app renovó el token (lo hace al abrirse y cada tanto). No es
+     * la última pantalla que vio.
+     */
+    lastSeenAt: Date | null;
+  };
+}
+
 const userTarget = (user: Pick<User, 'urn' | 'email'>) => ({
   type: AuditTargetType.USER,
   urn: user.urn,
@@ -44,6 +59,7 @@ export class AdminUsersService {
     private readonly usersRepository: UsersRepository,
     private readonly sessionsRepository: SessionsRepository,
     private readonly audit: AdminAuditService,
+    @InjectModel(Session.name) private readonly sessionModel: Model<Session>,
     @InjectModel(BusinessMember.name) private readonly memberModel: Model<BusinessMember>,
     @InjectModel(Business.name) private readonly businessModel: Model<Business>,
   ) {}
@@ -123,6 +139,56 @@ export class AdminUsersService {
       userTarget(changed),
     );
     return toPublicUser(changed);
+  }
+
+  /** Todo sobre un usuario: sus negocios y cuándo entró. Su historial sale de la auditoría. */
+  async detail(userUrn: string, now: Date = new Date()): Promise<AdminUserDetail> {
+    const user = await this.usersRepository.one(userUrn);
+    if (!user) {
+      return Exceptions.notFound(Errors.USER_NOT_FOUND);
+    }
+
+    const [members, active, sessions] = await Promise.all([
+      this.memberModel.find({ userUrn, status: BusinessMemberStatus.ACTIVE }).lean<BusinessMember[]>().exec(),
+      this.sessionModel.countDocuments({ userUrn, revokedAt: { $exists: false }, expiresAt: { $gt: now } }).exec(),
+      this.sessionModel
+        .aggregate<{ lastLoginAt: Date | null; lastSeenAt: Date | null }>([
+          { $match: { userUrn } },
+          { $group: { _id: null, lastLoginAt: { $max: '$createdAt' }, lastSeenAt: { $max: '$updatedAt' } } },
+        ])
+        .exec()
+        .then(([row]) => row),
+    ]);
+
+    const businesses = await this.businessModel
+      .find({ urn: { $in: members.map((member) => member.businessUrn) } })
+      .select('urn name status')
+      .lean<Pick<Business, 'urn' | 'name' | 'status'>[]>()
+      .exec();
+    const businessByUrn = new Map(businesses.map((business) => [business.urn, business]));
+
+    return {
+      ...toPublicUser(user),
+      businesses: members.flatMap((member) => {
+        const business = businessByUrn.get(member.businessUrn);
+        return business
+          ? [
+              {
+                urn: business.urn,
+                name: business.name,
+                role: member.role,
+                status: business.status,
+                since: member.createdAt ?? null,
+              },
+            ]
+          : [];
+      }),
+      sessions: {
+        active,
+        lastLoginAt: sessions?.lastLoginAt ?? null,
+        lastSeenAt: sessions?.lastSeenAt ?? null,
+      },
+    };
   }
 
   /** Los usuarios de la plataforma, el mas nuevo primero, con los negocios de cada uno. */

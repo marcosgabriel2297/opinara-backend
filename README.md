@@ -240,6 +240,9 @@ POST   /admin/me/password        { currentPassword, newPassword } → sesión nu
 GET    /admin/admins             POST /admin/admins { email, name } → { admin, temporaryPassword }
 POST   /admin/admins/:urn/deactivate | reactivate     nadie se desactiva a sí mismo
 GET    /admin/audit              registro de auditoría (action, adminUrn, targetUrn, page, limit)
+GET    /admin/users/:urn         detalle: negocios con rol y estado, sesiones abiertas, último ingreso y actividad
+GET    /admin/google/health      conexiones revocadas o desconectadas y sucursales sin sincronizar hace más de
+                                 ADMIN_GOOGLE_STALE_AFTER_HOURS (6 h por defecto); dice si la sincronización está prendida
 GET    /admin/stats/overview     totales de la plataforma y evolución por semana (weeks: 1–52, default 12)
 GET    /admin/businesses         negocios con dueño, equipo, sucursales, Google, reseñas, campañas y escaneos
                                  (search, status, google=connected|not_connected, order=newest|name, page, limit)

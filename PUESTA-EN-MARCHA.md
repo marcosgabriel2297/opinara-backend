@@ -143,7 +143,7 @@ punta**: escaneo, opinión interna y salto al formulario de reseña del local co
 - [ ] Commitear el repo del **frontend**: hoy `master` no tiene ningún commit.
 - [ ] `.env.prod` del backend:
       ```
-      NODE_ENV=prod
+      NODE_ENV=production             # "prod" no es un valor válido: el backend no arranca
       DATABASE_URI=mongodb+srv://…
       DATABASE_NAME=opinara
       JWT_SECRET_KEY=<nueva>          # las tres, generadas con:

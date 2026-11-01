@@ -233,13 +233,26 @@ POST   /admin/auth/login         { email, password }  → { admin, accessToken, 
 POST   /admin/users              { email, name }      → 201 { user, temporaryPassword }
 GET    /admin/users              usuarios con sus negocios y rol (search, page, limit)
 POST   /admin/users/:urn/temporary-password  → { user, temporaryPassword }: otra provisoria, cierra sus sesiones
+POST   /admin/users/:urn/deactivate | reactivate      desactivada: no entra y se cierran sus sesiones
+POST   /admin/businesses/:urn/suspend | reactivate    suspendido: sin dashboard, sin QR, sin invitaciones
+GET    /admin/me                 la cuenta del admin
+POST   /admin/me/password        { currentPassword, newPassword } → sesión nueva; los tokens anteriores dejan de servir
+GET    /admin/admins             POST /admin/admins { email, name } → { admin, temporaryPassword }
+POST   /admin/admins/:urn/deactivate | reactivate     nadie se desactiva a sí mismo
+GET    /admin/audit              registro de auditoría (action, adminUrn, targetUrn, page, limit)
 GET    /admin/stats/overview     totales de la plataforma y evolución por semana (weeks: 1–52, default 12)
-GET    /admin/businesses         negocios con sus sucursales (para los filtros del panel)
+GET    /admin/businesses         negocios con dueño, equipo, sucursales, Google, reseñas, campañas y escaneos
+                                 (search, status, google=connected|not_connected, order=newest|name, page, limit)
+GET    /admin/businesses/options negocios con sus sucursales, sin paginar (para los filtros del panel)
+GET    /admin/businesses/:urn    detalle: equipo, sucursales con sus reseñas, campañas con sus escaneos
+GET    /admin/scans              escaneos por semana, totales y ranking de campañas (businessUrn, locationUrn, weeks)
 GET    /admin/reviews            reseñas de TODOS los negocios, con negocio y sucursal
 GET    /admin/reviews/summary    total, sin responder, promedio y distribución de lo filtrado
 ```
 
 Los dos de reseñas aceptan `businessUrn`, `locationUrn`, `rating`, `hasReply`, `from` / `to` (fecha de la reseña en Google; `to` exclusive) y `search` (texto literal en el comentario o el autor); el listado además `page`, `limit` (hasta 100) y `order` (`newest` | `oldest`). Son la única excepción a la regla de que cada consulta parte de un `businessUrn`: viven en `AdminReviewsRepository`, dentro del paquete del admin. Los consume el panel `opinara-admin`; en producción, su dominio va en `CORS_ORIGINS`.
+
+Cada acción de un admin (login, altas, contraseñas, desactivar, suspender) queda en `admin_audit_events` con quién, qué, sobre qué y cuándo; nunca con contraseñas. Los admins creados desde el panel tienen contraseña provisoria y, como los usuarios, hasta cambiarla solo pueden hacer eso. El token del admin lleva `pv` (versión de la contraseña): al cambiarla, los anteriores dejan de servir.
 
 El token del admin (`type: admin`, dura `ADMIN_TOKEN_EXPIRES_IN_SECONDS`, 8 h por defecto, sin refresh) solo sirve contra `/admin`, y el de un usuario no sirve ahí. El primer admin se crea con `yarn admin:create <email> "<nombre>"`, que imprime su contraseña una sola vez. El alta devuelve una **contraseña provisoria** (también una sola vez) que el admin le pasa al usuario: mientras no la cambie (`mustChangePassword`), el `AuthGuard` responde `403 PASSWORD_CHANGE_REQUIRED` a todo menos `/auth/me`, `/auth/password/change` y `/auth/logout/all`. Cambiarla cierra las demás sesiones; elegir una nueva desde el mail de recuperación también la reemplaza. Las invitaciones al equipo son solo para emails con cuenta (`INVITEE_NOT_REGISTERED`).
 

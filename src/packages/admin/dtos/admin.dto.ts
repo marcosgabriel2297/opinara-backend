@@ -44,3 +44,17 @@ export class ListUsersDto {
   @Max(ADMIN_MAX_PAGE_SIZE)
   limit?: number;
 }
+
+export class CreateAdminDto extends CreateUserDto {}
+
+/** Mismas reglas que el cambio de contraseña de los usuarios. */
+export class ChangeAdminPasswordDto {
+  @IsString()
+  @MaxLength(128)
+  currentPassword!: string;
+
+  @IsString()
+  @MinLength(8)
+  @MaxLength(128)
+  newPassword!: string;
+}

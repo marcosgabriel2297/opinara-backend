@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
 export class OverviewQueryDto {
   /** Cuántas semanas de evolución, la actual incluida. */
@@ -9,4 +9,16 @@ export class OverviewQueryDto {
   @Min(1)
   @Max(52)
   weeks?: number;
+}
+
+export class ScansQueryDto extends OverviewQueryDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  businessUrn?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  locationUrn?: string;
 }

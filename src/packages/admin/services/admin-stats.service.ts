@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model } from 'mongoose';
 
-import { Campaign, ScanEvent, lastMondays } from '@packages/campaigns';
+import { Campaign, ScanEvent } from '@packages/campaigns';
 import { GoogleConnection } from '@packages/google';
 import { Location } from '@packages/locations';
 import { Review } from '@packages/reviews';
@@ -15,6 +15,8 @@ import { User } from '@shared/models/user';
 
 import config from '../config';
 import * as DTO from '../dtos';
+
+import { weekWindow, weeklyCounts } from './weekly';
 
 export interface OverviewWeek {
   /** Lunes de la semana, `YYYY-MM-DD`. */
@@ -40,7 +42,6 @@ export interface PlatformOverview {
 }
 
 const DEFAULT_WEEKS = 12;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Las cifras de toda la plataforma para la pantalla de inicio del panel. Solo lectura. */
 @Injectable()
@@ -56,10 +57,7 @@ export class AdminStatsService {
   ) {}
 
   async overview(dto: DTO.Overview, now: Date = new Date()): Promise<PlatformOverview> {
-    const timezone = config.Timezone;
-    const mondays = lastMondays(timezone, dto.weeks ?? DEFAULT_WEEKS, now);
-    // Un día de margen: el lunes en Argentina empieza el domingo a la noche en UTC.
-    const since = new Date(Date.parse(`${mondays[0] ?? ''}T00:00:00Z`) - DAY_MS);
+    const { mondays, since } = weekWindow(dto.weeks ?? DEFAULT_WEEKS, now);
     const liveReviews = { deletedAt: { $exists: false } };
 
     const [
@@ -103,10 +101,10 @@ export class AdminStatsService {
         .select('scannedAt')
         .lean<Pick<ScanEvent, 'scannedAt'> | null>()
         .exec(),
-      this.weekly(this.userModel, 'createdAt', since, timezone),
-      this.weekly(this.businessModel, 'createdAt', since, timezone),
-      this.weekly(this.reviewModel, 'googleCreateTime', since, timezone, liveReviews),
-      this.weekly(this.scanEventModel, 'scannedAt', since, timezone),
+      weeklyCounts(this.userModel, 'createdAt', since),
+      weeklyCounts(this.businessModel, 'createdAt', since),
+      weeklyCounts(this.reviewModel, 'googleCreateTime', since, liveReviews),
+      weeklyCounts(this.scanEventModel, 'scannedAt', since),
     ]);
 
     return {
@@ -130,7 +128,7 @@ export class AdminStatsService {
         scans: scansByWeek.get(week) ?? 0,
       })),
       scansTrackedSince: firstScan?.scannedAt ?? null,
-      timezone,
+      timezone: config.Timezone,
     };
   }
 
@@ -152,34 +150,5 @@ export class AdminStatsService {
       .exec();
 
     return row ?? { total: 0, unanswered: 0, averageRating: null };
-  }
-
-  /** Cuántos documentos por semana (lunes a domingo, en `timezone`) según `field`, desde `since`. */
-  private async weekly<T>(
-    model: Model<T>,
-    field: string,
-    since: Date,
-    timezone: string,
-    match: FilterQuery<T> = {},
-  ): Promise<Map<string, number>> {
-    const rows = await model
-      .aggregate<{ _id: string; count: number }>([
-        { $match: { ...match, [field]: { $gte: since } } },
-        {
-          $group: {
-            _id: {
-              $dateToString: {
-                format: '%Y-%m-%d',
-                date: { $dateTrunc: { date: `$${field}`, unit: 'week', startOfWeek: 'monday', timezone } },
-                timezone,
-              },
-            },
-            count: { $sum: 1 },
-          },
-        },
-      ])
-      .exec();
-
-    return new Map(rows.map((row) => [row._id, row.count]));
   }
 }

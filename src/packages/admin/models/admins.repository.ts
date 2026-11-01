@@ -13,12 +13,19 @@ export class AdminsRepository extends DatabaseRepository<Admin> {
     super(model);
   }
 
-  findActiveByUrn(urn: string): Promise<Pick<Admin, 'urn' | 'email'> | null> {
+  /** Proyección mínima para el `AdminGuard`: se ejecuta en cada request del panel. */
+  findActiveByUrn(
+    urn: string,
+  ): Promise<Pick<Admin, 'urn' | 'email' | 'mustChangePassword' | 'passwordVersion'> | null> {
     return this.model
       .findOne({ urn, status: UserStatus.ACTIVE })
-      .select('urn email')
-      .lean<Pick<Admin, 'urn' | 'email'> | null>()
+      .select('urn email mustChangePassword passwordVersion')
+      .lean<Pick<Admin, 'urn' | 'email' | 'mustChangePassword' | 'passwordVersion'> | null>()
       .exec();
+  }
+
+  findByUrnWithPassword(urn: string): Promise<Admin | null> {
+    return this.model.findOne({ urn }).select('+password').lean<Admin | null>().exec();
   }
 
   /** El password esta marcado `select: false`, hay que pedirlo explicitamente para el login. */

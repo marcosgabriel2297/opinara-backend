@@ -8,7 +8,7 @@ import { Review, ReviewSchema } from '@packages/reviews';
 
 import * as Controllers from './controllers';
 import { AdminGuard } from './guards';
-import { Admin, AdminReviewsRepository, AdminSchema, AdminsRepository } from './models';
+import { Admin, AdminReviewsRepository, AdminSchema, AdminsRepository, AuditEvent, AuditEventSchema } from './models';
 import * as Services from './services';
 
 @Module({
@@ -17,6 +17,7 @@ import * as Services from './services';
   imports: [
     MongooseModule.forFeature([
       { name: Admin.name, schema: AdminSchema },
+      { name: AuditEvent.name, schema: AuditEventSchema },
       { name: Review.name, schema: ReviewSchema },
       { name: Location.name, schema: LocationSchema },
       { name: Campaign.name, schema: CampaignSchema },
@@ -24,7 +25,18 @@ import * as Services from './services';
       { name: GoogleConnection.name, schema: GoogleConnectionSchema },
     ]),
   ],
-  controllers: [Controllers.Admin, Controllers.Reports],
-  providers: [Services.Admin, Services.Reports, Services.Stats, AdminsRepository, AdminReviewsRepository, AdminGuard],
+  controllers: [Controllers.Accounts, Controllers.Users, Controllers.Businesses, Controllers.Reports],
+  providers: [
+    Services.Accounts,
+    Services.Users,
+    Services.Reports,
+    Services.Stats,
+    Services.Businesses,
+    Services.Scans,
+    Services.Audit,
+    AdminsRepository,
+    AdminReviewsRepository,
+    AdminGuard,
+  ],
 })
 export class AdminModule {}

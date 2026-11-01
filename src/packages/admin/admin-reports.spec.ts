@@ -135,7 +135,7 @@ describe('Reportes del administrador (integracion)', () => {
   });
 
   it('lista los negocios con sus sucursales para los filtros', async () => {
-    const response = await get('/api/admin/businesses').expect(200);
+    const response = await get('/api/admin/businesses/options').expect(200);
 
     expect(response.body).toEqual([
       expect.objectContaining({
@@ -153,7 +153,7 @@ describe('Reportes del administrador (integracion)', () => {
   it('solo con el token del admin', async () => {
     const user = await registerUser(app);
 
-    for (const path of ['/api/admin/reviews', '/api/admin/reviews/summary', '/api/admin/businesses']) {
+    for (const path of ['/api/admin/reviews', '/api/admin/reviews/summary', '/api/admin/businesses/options']) {
       await request(app.getHttpServer()).get(path).expect(401);
       await get(path, user.auth).expect(401);
     }

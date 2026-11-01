@@ -1,13 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model } from 'mongoose';
 
 import { Errors } from '@shared/common/errors';
 import { Exceptions } from '@shared/common/exceptions';
-import { Paginated, TokenType, paginate } from '@shared/common/interfaces';
-import { comparePassword, generatePassword, hashPassword } from '@shared/common/password';
+import { Paginated, paginate } from '@shared/common/interfaces';
+import { generatePassword, hashPassword } from '@shared/common/password';
 import { Urn } from '@shared/common/urn';
 import { Business, BusinessMember } from '@shared/models/business';
 import { SessionsRepository } from '@shared/models/session';
@@ -16,15 +14,11 @@ import { UserStatus } from '@shared/models/enums/user';
 import { PublicUser, USER_ENTITY, User, UsersRepository, toPublicUser } from '@shared/models/user';
 import { escapeRegex, isDuplicateKeyError } from '@shared/utils';
 
-import config from '../config';
 import * as DTO from '../dtos';
-import { AdminsRepository, PublicAdmin, toPublicAdmin } from '../models';
+import { AuthenticatedAdmin } from '../guards';
+import { AuditAction, AuditTargetType } from '../models';
 
-export interface AdminSession {
-  admin: PublicAdmin;
-  accessToken: string;
-  expiresIn: number;
-}
+import { AdminAuditService } from './admin-audit.service';
 
 export interface CreatedUser {
   user: PublicUser;
@@ -37,37 +31,25 @@ export interface AdminUser extends PublicUser {
   businesses: { urn: string; name: string; role: BusinessMemberRole }[];
 }
 
+const userTarget = (user: Pick<User, 'urn' | 'email'>) => ({
+  type: AuditTargetType.USER,
+  urn: user.urn,
+  label: user.email,
+});
+
+/** Los usuarios de la plataforma: listado, alta, contraseñas y desactivación. Lo que cambia, se audita. */
 @Injectable()
-export class AdminService {
+export class AdminUsersService {
   constructor(
-    private readonly adminsRepository: AdminsRepository,
     private readonly usersRepository: UsersRepository,
     private readonly sessionsRepository: SessionsRepository,
-    private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
+    private readonly audit: AdminAuditService,
     @InjectModel(BusinessMember.name) private readonly memberModel: Model<BusinessMember>,
     @InjectModel(Business.name) private readonly businessModel: Model<Business>,
   ) {}
 
-  async login(payload: DTO.Login): Promise<AdminSession> {
-    const admin = await this.adminsRepository.findByEmailWithPassword(payload.email);
-    const matches = await comparePassword(payload.password, admin?.password);
-
-    // Mismo error para email inexistente, password incorrecto o admin inactivo.
-    if (!admin || !matches || admin.status !== UserStatus.ACTIVE) {
-      return Exceptions.unauthorized(Errors.WRONG_CREDENTIALS);
-    }
-
-    const accessToken = await this.jwtService.signAsync(
-      { sub: admin.urn, email: admin.email, type: TokenType.ADMIN },
-      { secret: this.configService.getOrThrow<string>('JWT_SECRET_KEY'), expiresIn: config.Token.ExpiresIn },
-    );
-
-    return { admin: toPublicAdmin(admin), accessToken, expiresIn: config.Token.ExpiresIn };
-  }
-
   /** Da de alta un usuario con una contraseña provisoria que tiene que cambiar al primer inicio de sesion. */
-  async createUser(payload: DTO.CreateUser): Promise<CreatedUser> {
+  async createUser(admin: AuthenticatedAdmin, payload: DTO.CreateUser): Promise<CreatedUser> {
     const email = payload.email.toLowerCase().trim();
 
     if (await this.usersRepository.findByEmail(email)) {
@@ -85,6 +67,7 @@ export class AdminService {
         mustChangePassword: true,
       });
 
+      await this.audit.record(admin, AuditAction.USER_CREATED, userTarget(user));
       return { user: toPublicUser(user), temporaryPassword };
     } catch (error) {
       // Dos altas concurrentes pasan el chequeo de arriba; el indice unico frena a la segunda.
@@ -100,7 +83,7 @@ export class AdminService {
    * Otra contraseña provisoria, para quien perdio la del alta (o la olvido y no le llega el mail).
    * Reemplaza la actual, obliga a cambiarla al entrar y cierra todas sus sesiones abiertas.
    */
-  async resetTemporaryPassword(userUrn: string): Promise<CreatedUser> {
+  async resetTemporaryPassword(admin: AuthenticatedAdmin, userUrn: string): Promise<CreatedUser> {
     const temporaryPassword = generatePassword();
     const user = await this.usersRepository.updateOne(
       { urn: userUrn },
@@ -111,8 +94,35 @@ export class AdminService {
     }
 
     await this.sessionsRepository.revokeAllForUser(userUrn);
+    await this.audit.record(admin, AuditAction.USER_TEMPORARY_PASSWORD, userTarget(user));
 
     return { user: toPublicUser(user), temporaryPassword };
+  }
+
+  /**
+   * Desactiva o reactiva una cuenta. Desactivada no puede entrar ni usar la API (el `AuthGuard`
+   * lo chequea en cada request) y se cierran sus sesiones. Sus negocios siguen andando para el
+   * resto del equipo. Repetir el mismo estado no cambia nada ni deja otro evento.
+   */
+  async setStatus(admin: AuthenticatedAdmin, userUrn: string, status: UserStatus): Promise<PublicUser> {
+    const changed = await this.usersRepository.updateOne(
+      { urn: userUrn, status: { $ne: status } },
+      { $set: { status } },
+    );
+    if (!changed) {
+      const current = await this.usersRepository.one(userUrn);
+      return current ? toPublicUser(current) : Exceptions.notFound(Errors.USER_NOT_FOUND);
+    }
+
+    if (status === UserStatus.INACTIVE) {
+      await this.sessionsRepository.revokeAllForUser(userUrn);
+    }
+    await this.audit.record(
+      admin,
+      status === UserStatus.INACTIVE ? AuditAction.USER_DEACTIVATED : AuditAction.USER_REACTIVATED,
+      userTarget(changed),
+    );
+    return toPublicUser(changed);
   }
 
   /** Los usuarios de la plataforma, el mas nuevo primero, con los negocios de cada uno. */

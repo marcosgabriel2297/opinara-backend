@@ -6,6 +6,8 @@ const toNumber = (value: string | undefined, fallback: number): number => {
 };
 
 export default {
+  /** Las semanas de los reportes de toda la plataforma: los negocios son todos de Argentina. */
+  Timezone: 'America/Argentina/Buenos_Aires',
   Token: {
     /** Sin refresh: al vencer, el admin vuelve a iniciar sesion. */
     ExpiresIn: toNumber(process.env.ADMIN_TOKEN_EXPIRES_IN_SECONDS, 8 * 3600),

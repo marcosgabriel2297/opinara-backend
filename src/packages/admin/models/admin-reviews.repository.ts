@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model } from 'mongoose';
 
 import { Review } from '@packages/reviews';
+import { escapeRegex } from '@shared/utils';
 
 export interface AdminReviewFilters {
   businessUrn?: string;
@@ -20,8 +21,6 @@ export interface AdminReviewsSummary {
   averageRating: number | null;
   stars: Record<1 | 2 | 3 | 4 | 5, number>;
 }
-
-const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * Las reseñas de TODOS los negocios. Es la unica excepcion a la regla de que cada consulta parte de

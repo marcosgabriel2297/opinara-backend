@@ -8,7 +8,16 @@ import * as Services from '../services';
 @Controller()
 @AdminAuth()
 export class AdminReportsController {
-  constructor(private readonly service: Services.Reports) {}
+  constructor(
+    private readonly service: Services.Reports,
+    private readonly stats: Services.Stats,
+  ) {}
+
+  /** La pantalla de inicio del panel: totales y evolución por semana. */
+  @Get('/stats/overview')
+  overview(@Query() query: DTO.Overview) {
+    return this.stats.overview(query);
+  }
 
   @Get('/businesses')
   businesses() {

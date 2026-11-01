@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 
 import config from '../config';
@@ -19,10 +19,24 @@ export class AdminController {
     return this.service.login(payload);
   }
 
+  @Get('/users')
+  @AdminAuth()
+  listUsers(@Query() query: DTO.ListUsers) {
+    return this.service.listUsers(query);
+  }
+
   /** Alta de un usuario: no hay registro publico. */
   @Post('/users')
   @AdminAuth()
   createUser(@Body() payload: DTO.CreateUser) {
     return this.service.createUser(payload);
+  }
+
+  /** Genera otra contraseña provisoria y cierra las sesiones del usuario. */
+  @Post('/users/:userUrn/temporary-password')
+  @HttpCode(HttpStatus.OK)
+  @AdminAuth()
+  resetTemporaryPassword(@Param('userUrn') userUrn: string) {
+    return this.service.resetTemporaryPassword(userUrn);
   }
 }

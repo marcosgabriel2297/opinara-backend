@@ -231,6 +231,9 @@ No hay registro público: a los usuarios los da de alta un **administrador** de 
 ```
 POST   /admin/auth/login         { email, password }  → { admin, accessToken, expiresIn }
 POST   /admin/users              { email, name }      → 201 { user, temporaryPassword }
+GET    /admin/users              usuarios con sus negocios y rol (search, page, limit)
+POST   /admin/users/:urn/temporary-password  → { user, temporaryPassword }: otra provisoria, cierra sus sesiones
+GET    /admin/stats/overview     totales de la plataforma y evolución por semana (weeks: 1–52, default 12)
 GET    /admin/businesses         negocios con sus sucursales (para los filtros del panel)
 GET    /admin/reviews            reseñas de TODOS los negocios, con negocio y sucursal
 GET    /admin/reviews/summary    total, sin responder, promedio y distribución de lo filtrado

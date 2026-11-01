@@ -12,3 +12,6 @@ export const slugify = (value: string): string =>
     .slice(0, 60);
 
 export const toBoolean = (value: string | undefined): boolean => value === 'true' || value === '1';
+
+/** Texto libre para usar literal dentro de un `RegExp`: `.*` busca un punto y un asterisco, no "todo". */
+export const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

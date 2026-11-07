@@ -2,6 +2,8 @@
 
 Lo que queda propuesto para Opinara, ordenado por impacto. Nada de esto está empezado. Cada punto dice qué resuelve, qué necesita del backend y cuánto esfuerzo lleva más o menos (bajo, medio o alto).
 
+> **Primero, el punto 0:** es lo que permite vender la gestión de reseñas antes de que Google apruebe la API.
+>
 > **Condición para casi todo:** lo que depende de datos reales de Google (avisos, temas, tiempo de respuesta) recién anda en producción cuando Google apruebe el acceso a la API de Business Profile. Mientras tanto se puede construir y probar contra los mocks del frontend y los fakes de los tests.
 
 Ya hecho (octubre 2026), fuera de esta lista: límite del QR por IP y campaña con página de espera, sesiones revocables (cerrar sesión de verdad y en todos los dispositivos), recuperar contraseña e invitar miembros con roles.
@@ -9,6 +11,64 @@ Ya hecho (octubre 2026), fuera de esta lista: límite del QR por IP y campaña c
 ---
 
 ## Producto
+
+### 0. Responder sin la API aprobada: "Copiar respuesta" en vez de "Responder" — esfuerzo medio
+
+*Decidido el 2026-11-01.* **Por qué:** publicar una respuesta exige que Google apruebe el Basic API
+Access del proyecto (ver `PUESTA-EN-MARCHA.md`, paso 0.5), y eso tarda semanas o depende de
+conseguir un perfil que cumpla los requisitos. No hay atajo legítimo: automatizar el navegador o
+usar bots pone en riesgo el perfil **del cliente**. Esto permite vender la gestión de reseñas desde
+ya: Opinara redacta, el dueño publica desde Google.
+
+**Cómo se ve:**
+- Se **oculta el botón "Responder"** (el que publica con `PUT …/reviews/:reviewUrn/reply`).
+- En su lugar: **"Sugerir respuesta con IA"** → el dueño la revisa/edita → **"Copiar"** (al
+  portapapeles) → **"Responder en Google"**, que abre el perfil del negocio en Google para pegarla
+  ahí. Un texto corto lo explica: *"La respuesta se publica desde tu cuenta de Google."*
+- Cuando la API esté aprobada se vuelve al botón "Responder" que publica directo, y "Copiar" queda
+  como opción secundaria.
+
+**Interruptor:** un flag por negocio, o derivado de la conexión: si no hay conexión de Google activa
+o la API responde cuota 0, el front muestra el modo "Copiar". Exponerlo en la respuesta de las
+reseñas (o de `GET /google/connection`) como `canPublishReplies: boolean`, para que el front no
+tenga que deducirlo de un error.
+
+**Lo que ya existe y se reutiliza:** `POST …/reviews/:reviewUrn/reply-suggestion` y
+`reply-suggester.ts`, con el proveedor de IA intercambiable (`LLM_PROVIDER`: groq o anthropic).
+
+**Lo que falta resolver — de dónde salen las reseñas sin la API.** Hoy solo entran a la base por la
+sincronización, que usa la API. Dos opciones, no excluyentes:
+1. **Places API** (oficial, paga por uso, se habilita al instante): trae la calificación, el total
+   y **como máximo 5 reseñas** ("las más relevantes") por sucursal, con el `placeId` que ya tienen
+   las sucursales manuales. No trae todas ni el id de la API de Business Profile: guardarlas con
+   `source: PLACES` y deduplicar cuando llegue la sincronización real (por autor + fecha + texto).
+   - **Ojo con las condiciones de Google Maps Platform:** su contenido (salvo el Place ID) no se
+     puede guardar de forma permanente. Mejor un endpoint que consulte a Google con caché corta
+     (por ejemplo `GET …/locations/:locationUrn/google-snapshot`, caché en memoria de ~24 h) que
+     persistirlas. Mostrar la atribución que pide Google (autor con su link y foto).
+   - **Costos** (precios de Google consultados el 2026-11-01): pedir `reviews` es la SKU *Place
+     Details Enterprise + Atmosphere*. **1.000 consultas gratis por mes**, después **USD 25 cada
+     1.000** (USD 0,025 por consulta), con descuentos por volumen. Una consulta trae calificación,
+     total y las 5 reseñas de una sucursal. Con una consulta por día por sucursal: ~30 por mes, o
+     sea ~33 sucursales gratis y después ~USD 0,75 por sucursal por mes.
+   - **Para que no haya sorpresas:** tope de consultas por día en la cuota de *Places API (New)*,
+     alerta de presupuesto en Facturación, y clave de API restringida a esa API y a la IP del
+     servidor. Hace falta una cuenta de facturación con tarjeta aunque no se gaste.
+2. **Pegar la reseña**: el dueño pega el texto (y la calificación) de una reseña que vio en Google,
+   y Opinara sugiere la respuesta. Un endpoint de sugerencia que no requiera `reviewUrn`. Cubre
+   cualquier reseña, sin costo de Places.
+
+**Cuidado:**
+- El texto de la reseña es dato, no instrucciones (mismo criterio que hoy en `reply-suggester.ts`).
+- **Link de "Responder en Google"** (2026-11-01): no existe un link oficial a *responder una
+  reseña puntual*; se lleva al dueño a las reseñas de su local y ahí, logueado con una cuenta que
+  administre el perfil, toca "Responder". Se arma con el `placeId` que ya tiene cada `Location`
+  (no hace falta la API):
+  `https://search.google.com/local/reviews?placeid=<PLACE_ID>`, mismo esquema que el
+  `newReviewUri` de las manuales. Alternativa: el `mapsUri` de la sucursal. **Probar los dos con
+  una cuenta gerente antes de elegir** (Google cambia estos links). Si se usa Places API, cada
+  reseña trae su propio `googleMapsUri`, que sí apunta a esa reseña.
+- Avisarle al cliente que en este modo el panel no muestra **todas** las reseñas.
 
 ### 1. Avisos de reseñas nuevas y resumen semanal — esfuerzo medio
 
@@ -22,6 +82,43 @@ Ya hecho (octubre 2026), fuera de esta lista: límite del QR por IP y campaña c
 - Preferencias por miembro (`notification_preferences`: qué avisos, a qué email) y un cron semanal en la zona horaria del negocio.
 - Usa el `MailerModule` que ya existe. Para producción hace falta dominio propio con SPF y DKIM, o los mails caen en spam.
 - Agrupar: diez reseñas en una hora tienen que ser un solo mail, no diez.
+
+### 1.1 Que las reseñas nuevas lleguen enseguida — esfuerzo bajo (paso A) y medio (paso B)
+
+*Anotado el 2026-11-01.* **Por qué:** hoy una reseña nueva recién aparece en Opinara en el próximo
+ciclo del cron (`REVIEW_SYNC_CRON`, cada 15 minutos), y solo con la API de Google aprobada. Desde
+que se sacó el botón "Sincronizar" del frontend (2026-11-01), el dueño no tiene cómo forzarla:
+depende del cron. Sin la API aprobada no aparece nunca: solo se ve en Google.
+
+**Paso A — bajar el intervalo del cron (el día que aprueben la API).** No hay que programar nada:
+`REVIEW_SYNC_CRON=0 */5 * * * *` (cada 5 minutos).
+- La cuota alcanza de sobra: 300 pedidos por minuto para todo el proyecto, y una sucursal sin
+  reseñas nuevas gasta ~1 pedido por ciclo. Cada 5 minutos entran cientos de sucursales.
+- No bajar de 2-3 minutos: el candado del cron es en memoria y una corrida larga no debe pisarse
+  con la siguiente.
+- Junto con esto, `REVIEW_SYNC_ENABLED=true` en producción (Etapa 2 de `PUESTA-EN-MARCHA.md`): sin
+  eso el aviso "Se actualizan solas con Google" del frontend promete algo que no pasa.
+
+**Paso B — notificaciones de Google por Pub/Sub (casi tiempo real).** Es la solución de fondo; ya
+estaba prevista como post-MVP en `ESTADO.md`.
+- Google avisa a Opinara cuando entra una reseña (evento `NEW_REVIEW`, también `UPDATED_REVIEW`),
+  y Opinara sincroniza **solo esa sucursal** en el momento: la reseña aparece en segundos.
+- Necesita la API aprobada. La *My Business Notifications API* ya está habilitada en el proyecto.
+- Piezas:
+  - Un topic de Pub/Sub en el proyecto `opinara`, con permiso de publicación para la cuenta de
+    servicio de Google Business Profile (`mybusiness-api-pubsub@system.gserviceaccount.com`).
+  - Una suscripción *push* al endpoint público nuevo, por ejemplo `POST /api/google/notifications`,
+    que **valida el JWT OIDC** del push (que lo manda Google y para nuestra audiencia) y dispara
+    `syncLocation` de la sucursal afectada. Responder 2xx rápido y sincronizar en segundo plano.
+  - Al conectar una cuenta de Google, registrar `notificationSetting` de esa cuenta apuntando al topic;
+    al desconectar, borrarlo.
+- El cron queda como respaldo, con un intervalo más largo, por si se pierde algún aviso.
+- **Limitación de Google:** un solo destino de notificaciones por cuenta de Google. Si el negocio ya
+  usa otra herramienta que las configuró, se pisan: avisarle antes de activarlo y mostrar en el
+  panel si la configuración no es la nuestra.
+
+**Recomendación:** el paso A el día que aprueben; el paso B junto con los avisos al dueño (punto 1),
+que es donde la inmediatez importa de verdad: el dueño no mira el panel, pero sí el mail o el WhatsApp.
 
 ### 2. Pedir reseñas por WhatsApp, además del QR — esfuerzo bajo
 

@@ -21,8 +21,13 @@ calle antes (Etapa 1).
 
 ## Lo que ya está hecho
 
-- [x] El local conseguido: sitio web, dueño dispuesto y Place ID de la sucursal a mano. Lo de
-      "perfil verificado con más de 60 días" quedó en duda: ver *Acceso al perfil del local*.
+- [x] El local conseguido: dueño dispuesto y Place ID de la sucursal a mano. **Corrección
+      (2026-11-01): Mi piace gelato no tiene sitio web propio**, requisito del formulario 0.5.
+- [ ] **Perfil para respaldar el formulario 0.5** (2026-11-01). Candidato: *Acción* (ropa infantil,
+      Tortuguitas): responde reseñas como propietario desde hace un año, o sea verificado hace más de
+      60 días. Le falta un sitio web propio (hoy figura Instagram): hacerle una web simple en dominio
+      propio, que el **dueño** la cargue en su perfil, invitar a nuestra cuenta como Gerente y recién
+      ahí mandar 0.5 con sus datos.
 - [x] Proyecto de Google Cloud creado: **`opinara`**.
 - [x] Habilitadas tres de las cuatro APIs: *My Business Account Management*,
       *My Business Business Information* y *My Business Notifications*.
@@ -78,7 +83,7 @@ calle antes (Etapa 1).
       que mostrar el panel de administración, no la ficha pública.
 - [x] Comprobado el 2026-10-22: con la cuenta gerente, buscar el local muestra el panel de
       administración (*"Solo los administradores de este perfil pueden ver esto"*).
-- [ ] **Verificación del perfil.** El panel de la cuenta gerente muestra *"La verificación no se ha
+- [x] **Verificación del perfil** — confirmada el 2026-11-01. El panel de la cuenta gerente muestra *"La verificación no se ha
       completado. Es posible que los clientes no puedan ver algunos de tus cambios"*. No es un perfil
       duplicado: llegamos por invitación del dueño. Falta que **el dueño**, desde su cuenta en
       business.google.com, diga qué estado ve:
@@ -197,8 +202,9 @@ punta**: escaneo, opinión interna y salto al formulario de reseña del local co
 | La *Google My Business API* no aparece en la biblioteca | normal: se hace visible recién con el Basic API Access aprobado |
 | `redirect_uri_mismatch` al conectar | `GOOGLE_REDIRECT_URI` no es idéntico al de la consola |
 | "Acceso bloqueado" en la pantalla de Google | la cuenta que autoriza no está en *Usuarios de prueba* |
-| `GOOGLE_PERMISSION_DENIED` | todavía sin aprobación (cuota 0), o le sacaron el acceso al perfil a nuestra cuenta |
+| `GOOGLE_RATE_LIMITED` ("Google está limitando los pedidos") al listar cuentas, recién conectado | todavía sin aprobación: con cuota 0 Google responde **429** `RESOURCE_EXHAUSTED`, no 403. Comprobado el 2026-11-01 |
+| `GOOGLE_PERMISSION_DENIED` | le sacaron el acceso al perfil a nuestra cuenta, o la API no está habilitada en el proyecto |
 | `GOOGLE_MISSING_REFRESH_TOKEN` | esa cuenta ya había autorizado antes: revocar en su cuenta de Google y reconectar |
 | `GOOGLE_CONNECTION_REVOKED` a los 7 días | la app sigue en Testing → Etapa 3 |
 | `LOCATION_NOT_SYNCABLE` | la sucursal es manual y todavía no se importó de Google |
-| `GOOGLE_RATE_LIMITED` | 300 QPM por proyecto, compartidos entre todos los negocios |
+| `GOOGLE_RATE_LIMITED` con la API ya aprobada | 300 QPM por proyecto, compartidos entre todos los negocios |

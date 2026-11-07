@@ -47,6 +47,19 @@ import {
   GoogleConnectionSchema,
 } from '@packages/google';
 import { REVIEW_ENTITY, Review, ReviewSchema } from '@packages/reviews';
+import {
+  LOYALTY_MEMBER_ENTITY,
+  LOYALTY_PROGRAM_ENTITY,
+  LoyaltyEvent,
+  LoyaltyEventSchema,
+  LoyaltyMember,
+  LoyaltyMemberSchema,
+  LoyaltyProgram,
+  LoyaltyProgramSchema,
+  LoyaltyProgramStatus,
+} from '@packages/loyalty';
+import { generateCardToken, generateMemberCode, hashCardToken } from '@packages/loyalty/utils';
+import { BusinessPlan } from '@shared/models/enums/plan';
 
 const PASSWORD = 'claveSuperSegura1';
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -121,6 +134,9 @@ async function seed(): Promise<void> {
   const Reviews = connection.model(Review.name, ReviewSchema);
   const Campaigns = connection.model(Campaign.name, CampaignSchema);
   const QRCodes = connection.model(QRCode.name, QRCodeSchema);
+  const LoyaltyPrograms = connection.model(LoyaltyProgram.name, LoyaltyProgramSchema);
+  const LoyaltyMembers = connection.model(LoyaltyMember.name, LoyaltyMemberSchema);
+  const LoyaltyEvents = connection.model(LoyaltyEvent.name, LoyaltyEventSchema);
 
   console.log(`Limpiando la base "${dbName}"...`);
   // Uno por uno y no con un map: los modelos tienen tipos distintos y TypeScript no puede
@@ -134,6 +150,9 @@ async function seed(): Promise<void> {
   await Reviews.deleteMany({});
   await Campaigns.deleteMany({});
   await QRCodes.deleteMany({});
+  await LoyaltyPrograms.deleteMany({});
+  await LoyaltyMembers.deleteMany({});
+  await LoyaltyEvents.deleteMany({});
 
   const password = await hashPassword(PASSWORD);
   const user = async (email: string, name: string) =>
@@ -152,7 +171,7 @@ async function seed(): Promise<void> {
   const carla = await user('empleada@opinara.test', 'Carla Ruiz');
   const diego = await user('peluqueria@opinara.test', 'Diego Paz');
 
-  const business = async (name: string, slug: string, owner: { urn: string }) =>
+  const business = async (name: string, slug: string, owner: { urn: string }, plan: BusinessPlan) =>
     Businesses.create({
       urn: Urn.createUUID(BUSINESS_ENTITY),
       name,
@@ -160,10 +179,12 @@ async function seed(): Promise<void> {
       ownerUserUrn: owner.urn,
       status: BusinessStatus.ACTIVE,
       timezone: 'America/Argentina/Buenos_Aires',
+      plan,
     });
 
-  const cafe = await business('Café de la Esquina', 'cafe-de-la-esquina', lucia);
-  const peluqueria = await business('Peluquería Estilo', 'peluqueria-estilo', diego);
+  // El cafe tiene la tarjeta de sellos; la peluqueria, el plan de entrada (para ver el aviso del plan).
+  const cafe = await business('Café de la Esquina', 'cafe-de-la-esquina', lucia, BusinessPlan.REVIEWS_LOYALTY);
+  const peluqueria = await business('Peluquería Estilo', 'peluqueria-estilo', diego, BusinessPlan.REVIEWS);
 
   const member = async (businessUrn: string, userUrn: string, role: BusinessMemberRole) =>
     Members.create({
@@ -284,7 +305,48 @@ async function seed(): Promise<void> {
     return created;
   };
 
-  await campaign(centro, 'Mostrador', 'mostrador', lucia.urn, { scans: 184, googleClicks: 184 });
+  const mostrador = await campaign(centro, 'Mostrador', 'mostrador', lucia.urn, { scans: 184, googleClicks: 184 });
+
+  // Tarjeta de sellos de la sucursal Centro, con un cliente a mitad de camino y otro con el premio listo.
+  const sellos = await LoyaltyPrograms.create({
+    urn: Urn.createUUID(LOYALTY_PROGRAM_ENTITY),
+    businessUrn: cafe.urn,
+    locationUrn: centro.urn,
+    slug: 'centro',
+    status: LoyaltyProgramStatus.ACTIVE,
+    stampsRequired: 5,
+    rewardDescription: 'Un café gratis',
+    terms: 'No acumulable con otras promociones.',
+    stampCooldownMinutes: 10,
+    stats: { members: 2, stamps: 8, redemptions: 0 },
+    createdByUserUrn: lucia.urn,
+  });
+
+  const cardTokens: { name: string; code: string; token: string }[] = [];
+  const loyaltyMember = async (name: string, phone: string, email: string | undefined, stamps: number) => {
+    const token = generateCardToken();
+    const code = generateMemberCode();
+    await LoyaltyMembers.create({
+      urn: Urn.createUUID(LOYALTY_MEMBER_ENTITY),
+      businessUrn: cafe.urn,
+      programUrn: sellos.urn,
+      memberCode: code,
+      name,
+      phone,
+      email,
+      cardTokenHash: hashCardToken(token),
+      cardToken: encrypt(token),
+      stamps,
+      totalStamps: stamps,
+      totalRedemptions: 0,
+      lastStampAt: null,
+      consent: { acceptedAt: daysAgo(10), termsVersion: '2026-11-06', marketing: email !== undefined },
+    });
+    cardTokens.push({ name, code, token });
+  };
+
+  await loyaltyMember('Ana Pérez', '+5491123456789', 'ana@cliente.test', 3);
+  await loyaltyMember('Bruno Díaz', '+5491155550000', undefined, 5);
   await campaign(palermo, 'Mesas Palermo', 'mesas-palermo', martin.urn, { scans: 97, googleClicks: 97 });
   await campaign(salon, 'Recepción', 'recepcion', diego.urn, { scans: 45, googleClicks: 45 });
 
@@ -296,6 +358,8 @@ async function seed(): Promise<void> {
     sucursales: await Locations.countDocuments(),
     reseñas: await Reviews.countDocuments(),
     campañas: await Campaigns.countDocuments(),
+    'tarjetas de sellos': await LoyaltyPrograms.countDocuments(),
+    'clientes con tarjeta': await LoyaltyMembers.countDocuments(),
   };
 
   console.log('\nDatos cargados:');
@@ -319,6 +383,13 @@ async function seed(): Promise<void> {
   console.log('\nQR publico (302 a Google)');
   console.log(`  GET /api/public/r/${cafe.slug}/mostrador`);
   console.log(`  GET /api/public/r/${peluqueria.slug}/recepcion`);
+
+  const appUrl = process.env.PUBLIC_APP_BASE_URL ?? 'http://localhost:5173';
+  console.log('\nTarjeta de sellos (Café de la Esquina, sucursal Centro)');
+  console.log(`  Alta:  ${appUrl}/f/${cafe.slug}/centro`);
+  for (const card of cardTokens) {
+    console.log(`  ${card.name} (código ${card.code}): ${appUrl}/card#token=${card.token}`);
+  }
   console.log('');
 
   await connection.close();

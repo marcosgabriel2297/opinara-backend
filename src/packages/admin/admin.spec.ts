@@ -3,7 +3,7 @@ import { Connection } from 'mongoose';
 import request from 'supertest';
 
 import { createTestApp } from '../../../test/app.factory';
-import { TEST_PASSWORD, createAdmin, registerUser } from '../../../test/helpers';
+import { TEST_PASSWORD, createAdmin, createBusiness, registerUser } from '../../../test/helpers';
 
 describe('Administracion (integracion)', () => {
   let app: INestApplication;
@@ -19,7 +19,11 @@ describe('Administracion (integracion)', () => {
   });
 
   afterEach(async () => {
-    await Promise.all(['users', 'admins', 'sessions'].map((name) => connection.collection(name).deleteMany({})));
+    await Promise.all(
+      ['users', 'admins', 'sessions', 'businesses', 'business_members'].map((name) =>
+        connection.collection(name).deleteMany({}),
+      ),
+    );
   });
 
   const http = () => request(app.getHttpServer());
@@ -141,6 +145,90 @@ describe('Administracion (integracion)', () => {
         mustChangePassword: false,
       }).expect(400);
       expect(extra.body.message).toContain('mustChangePassword');
+    });
+  });
+
+  describe('listado de usuarios', () => {
+    const list = (auth: string, query = '') => http().get(`/api/admin/users${query}`).set('Authorization', auth);
+
+    it('lista el mas nuevo primero, con sus negocios y si le falta cambiar la contraseña', async () => {
+      const adminAuth = await createAdmin(app);
+      const owner = await registerUser(app, 'dueno@opinara.test');
+      await createBusiness(app, owner, { name: 'Café de la Esquina' });
+      await createUser(adminAuth, { email: 'nuevo@opinara.test', name: 'Nuevo Usuario' }).expect(201);
+
+      const response = await list(adminAuth).expect(200);
+
+      expect(response.body).toMatchObject({ page: 0, limit: 25, total: 2 });
+      expect(response.body.items[0]).toMatchObject({
+        email: 'nuevo@opinara.test',
+        mustChangePassword: true,
+        businesses: [],
+      });
+      expect(response.body.items[1]).toMatchObject({
+        email: 'dueno@opinara.test',
+        mustChangePassword: false,
+        businesses: [{ name: 'Café de la Esquina', role: 'OWNER' }],
+      });
+      expect(JSON.stringify(response.body)).not.toContain('password"');
+    });
+
+    it('busca por email o nombre, literal, y pagina', async () => {
+      const adminAuth = await createAdmin(app);
+      await registerUser(app, 'ana@opinara.test');
+      await registerUser(app, 'bruno@opinara.test');
+      await createUser(adminAuth, { email: 'carla@negocio.test', name: 'Carla Ruiz' }).expect(201);
+
+      expect((await list(adminAuth, '?search=RUIZ').expect(200)).body.total).toBe(1);
+      expect((await list(adminAuth, '?search=opinara.test').expect(200)).body.total).toBe(2);
+      expect((await list(adminAuth, '?search=.*').expect(200)).body.total).toBe(0);
+
+      const second = await list(adminAuth, '?limit=2&page=1').expect(200);
+      expect(second.body).toMatchObject({ page: 1, limit: 2, total: 3 });
+      expect(second.body.items).toHaveLength(1);
+    });
+
+    it('solo con el token del admin', async () => {
+      const user = await registerUser(app);
+
+      await http().get('/api/admin/users').expect(401);
+      await list(user.auth).expect(401);
+    });
+  });
+
+  describe('otra contraseña provisoria', () => {
+    const reset = (auth: string | undefined, urn: string) => {
+      const call = http().post(`/api/admin/users/${encodeURIComponent(urn)}/temporary-password`);
+      return auth === undefined ? call : call.set('Authorization', auth);
+    };
+
+    it('reemplaza la contraseña, obliga a cambiarla y cierra las sesiones abiertas', async () => {
+      const adminAuth = await createAdmin(app);
+      const user = await registerUser(app, 'dueno@opinara.test');
+
+      const response = await reset(adminAuth, user.urn).expect(200);
+
+      expect(response.body.user).toMatchObject({ urn: user.urn, mustChangePassword: true });
+      expect(response.body.temporaryPassword).toMatch(/^[A-Za-z0-9_-]{16}$/);
+      expect(response.body.user).not.toHaveProperty('password');
+
+      await http().get('/api/auth/me').set('Authorization', user.auth).expect(401);
+      await http().post('/api/auth/login').send({ email: user.email, password: TEST_PASSWORD }).expect(401);
+      const login = await http()
+        .post('/api/auth/login')
+        .send({ email: user.email, password: response.body.temporaryPassword })
+        .expect(200);
+      expect(login.body.user.mustChangePassword).toBe(true);
+    });
+
+    it('un usuario inexistente es 404, y sin token de admin es 401', async () => {
+      const adminAuth = await createAdmin(app);
+      const user = await registerUser(app);
+
+      const missing = await reset(adminAuth, 'urn:user:00000000-0000-4000-8000-000000000000').expect(404);
+      expect(missing.body.errorCode).toBe('USER_NOT_FOUND');
+      await reset(undefined, user.urn).expect(401);
+      await reset(user.auth, user.urn).expect(401);
     });
   });
 });

@@ -15,14 +15,6 @@ export interface AdminReview extends PublicReview {
   location: { urn: string; title: string } | null;
 }
 
-export interface AdminBusinessOption {
-  urn: string;
-  name: string;
-  slug: string;
-  status: string;
-  locations: { urn: string; title: string }[];
-}
-
 const toFilters = (dto: DTO.ReviewFilters): AdminReviewFilters => ({
   businessUrn: dto.businessUrn,
   locationUrn: dto.locationUrn,
@@ -83,33 +75,5 @@ export class AdminReportsService {
 
   reviewsSummary(dto: DTO.ReviewFilters): Promise<AdminReviewsSummary> {
     return this.reviewsRepository.summary(toFilters(dto));
-  }
-
-  /** Negocios con sus sucursales: alimentan los filtros del panel. */
-  async businesses(): Promise<AdminBusinessOption[]> {
-    const [businesses, locations] = await Promise.all([
-      this.businessModel
-        .find()
-        .select('urn name slug status')
-        .sort({ name: 1 })
-        .lean<Pick<Business, 'urn' | 'name' | 'slug' | 'status'>[]>()
-        .exec(),
-      this.locationModel
-        .find()
-        .select('urn title businessUrn')
-        .sort({ title: 1 })
-        .lean<Pick<Location, 'urn' | 'title' | 'businessUrn'>[]>()
-        .exec(),
-    ]);
-
-    return businesses.map((business) => ({
-      urn: business.urn,
-      name: business.name,
-      slug: business.slug,
-      status: business.status,
-      locations: locations
-        .filter((location) => location.businessUrn === business.urn)
-        .map((location) => ({ urn: location.urn, title: location.title })),
-    }));
   }
 }

@@ -6,6 +6,12 @@ const toNumber = (value: string | undefined, fallback: number): number => {
 };
 
 export default {
+  /** Las semanas de los reportes de toda la plataforma: los negocios son todos de Argentina. */
+  Timezone: 'America/Argentina/Buenos_Aires',
+  Google: {
+    /** La sincronización corre cada 15 minutos: una sucursal sin sincronizar hace más que esto está atrasada. */
+    StaleAfterHours: toNumber(process.env.ADMIN_GOOGLE_STALE_AFTER_HOURS, 6),
+  },
   Token: {
     /** Sin refresh: al vencer, el admin vuelve a iniciar sesion. */
     ExpiresIn: toNumber(process.env.ADMIN_TOKEN_EXPIRES_IN_SECONDS, 8 * 3600),

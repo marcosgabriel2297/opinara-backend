@@ -29,6 +29,17 @@ export class Admin implements Entity {
   @Prop({ required: true, enum: UserStatus, default: UserStatus.ACTIVE })
   status!: UserStatus;
 
+  /** Lo dio de alta otro admin desde el panel: hasta elegir su contraseña, solo puede cambiarla. */
+  @Prop({ required: true, default: false })
+  mustChangePassword!: boolean;
+
+  /**
+   * Sube con cada cambio de contraseña y viaja en el token (`pv`): un token con otra versión deja de
+   * servir. El admin no tiene sesiones que revocar, y una fecha no alcanza (el `iat` va en segundos).
+   */
+  @Prop({ required: true, default: 0 })
+  passwordVersion!: number;
+
   declare createdAt?: Date;
   declare updatedAt?: Date;
 }
@@ -40,6 +51,16 @@ export interface PublicAdmin {
   urn: string;
   email: string;
   name: string;
+  status: UserStatus;
+  mustChangePassword: boolean;
+  createdAt?: Date;
 }
 
-export const toPublicAdmin = (admin: Admin): PublicAdmin => ({ urn: admin.urn, email: admin.email, name: admin.name });
+export const toPublicAdmin = (admin: Admin): PublicAdmin => ({
+  urn: admin.urn,
+  email: admin.email,
+  name: admin.name,
+  status: admin.status,
+  mustChangePassword: admin.mustChangePassword ?? false,
+  createdAt: admin.createdAt,
+});

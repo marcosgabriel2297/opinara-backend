@@ -38,6 +38,8 @@ export const registerUser = async (app: INestApplication, email?: string): Promi
     password: await passwordHash,
     status: 'ACTIVE',
     mustChangePassword: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
   });
 
   const response = await request(app.getHttpServer())

@@ -1,4 +1,7 @@
-import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsEmail, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+
+import { ADMIN_MAX_PAGE_SIZE } from './admin-reviews.dto';
 
 export class AdminLoginDto {
   @IsEmail()
@@ -19,4 +22,39 @@ export class CreateUserDto {
   @MinLength(2)
   @MaxLength(120)
   name!: string;
+}
+
+export class ListUsersDto {
+  /** Busca en el email y el nombre. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  search?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(ADMIN_MAX_PAGE_SIZE)
+  limit?: number;
+}
+
+export class CreateAdminDto extends CreateUserDto {}
+
+/** Mismas reglas que el cambio de contraseña de los usuarios. */
+export class ChangeAdminPasswordDto {
+  @IsString()
+  @MaxLength(128)
+  currentPassword!: string;
+
+  @IsString()
+  @MinLength(8)
+  @MaxLength(128)
+  newPassword!: string;
 }

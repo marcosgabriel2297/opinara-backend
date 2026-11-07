@@ -27,4 +27,6 @@ export const ScanEventSchema = SchemaFactory.createForClass(ScanEvent);
 
 // Las dos consultas: por negocio y por campaña, siempre acotadas por fecha.
 ScanEventSchema.index({ businessUrn: 1, scannedAt: -1 });
+// Los escaneos por semana de toda la plataforma (panel del admin).
+ScanEventSchema.index({ scannedAt: -1 });
 ScanEventSchema.index({ businessUrn: 1, campaignUrn: 1, scannedAt: -1 });

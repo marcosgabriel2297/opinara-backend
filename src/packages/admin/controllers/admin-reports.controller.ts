@@ -8,11 +8,30 @@ import * as Services from '../services';
 @Controller()
 @AdminAuth()
 export class AdminReportsController {
-  constructor(private readonly service: Services.Reports) {}
+  constructor(
+    private readonly service: Services.Reports,
+    private readonly stats: Services.Stats,
+    private readonly auditService: Services.Audit,
+    private readonly scans: Services.Scans,
+    private readonly google: Services.Google,
+  ) {}
 
-  @Get('/businesses')
-  businesses() {
-    return this.service.businesses();
+  /** Cómo anda la integración con Google: conexiones revocadas y sucursales sin sincronizar. */
+  @Get('/google/health')
+  googleHealth() {
+    return this.google.health();
+  }
+
+  /** La pantalla de inicio del panel: totales y evolución por semana. */
+  @Get('/stats/overview')
+  overview(@Query() query: DTO.Overview) {
+    return this.stats.overview(query);
+  }
+
+  /** Escaneos por semana y ranking de campañas, de toda la plataforma o filtrados. */
+  @Get('/scans')
+  scansReport(@Query() query: DTO.Scans) {
+    return this.scans.report(query);
   }
 
   @Get('/reviews')
@@ -24,5 +43,11 @@ export class AdminReportsController {
   @Get('/reviews/summary')
   reviewsSummary(@Query() query: DTO.ReviewFilters) {
     return this.service.reviewsSummary(query);
+  }
+
+  /** El registro de auditoría: lo que hicieron los admins, lo más nuevo primero. */
+  @Get('/audit')
+  audit(@Query() query: DTO.ListAudit) {
+    return this.auditService.list(query);
   }
 }

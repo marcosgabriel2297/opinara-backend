@@ -163,6 +163,35 @@ describe('Google (integracion)', () => {
       });
     });
 
+    it('acepta todos los parametros que Google agrega a la redireccion real', async () => {
+      // Regresion: Google manda `iss` (RFC 9207) y el ValidationPipe lo rechazaba con
+      // "property iss should not exist" despues de que el dueño autorizaba.
+      const { body } = await connect().expect(201);
+
+      const response = await callback({
+        state: stateFromUrl(body.authorizationUrl),
+        iss: 'https://accounts.google.com',
+        code: 'codigo-valido',
+        scope: 'https://www.googleapis.com/auth/business.manage',
+        authuser: '0',
+        hd: 'ejemplo.com',
+        prompt: 'consent',
+      }).expect(200);
+
+      expect(response.body).toEqual({ status: 'connected' });
+    });
+
+    it('acepta la cancelacion con los parametros de error que manda Google', async () => {
+      const response = await callback({
+        error: 'access_denied',
+        error_description: 'The user denied access',
+        error_uri: 'https://developers.google.com',
+        iss: 'https://accounts.google.com',
+      }).expect(200);
+
+      expect(response.body).toMatchObject({ status: 'error', errorCode: 'GOOGLE_PERMISSION_DENIED' });
+    });
+
     it('consume el state una sola vez: el replay falla', async () => {
       const { body } = await connect().expect(201);
       const state = stateFromUrl(body.authorizationUrl);

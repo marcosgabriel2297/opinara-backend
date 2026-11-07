@@ -1,3 +1,4 @@
 export * from './campaigns.module';
 export * from './models';
 export { CampaignsService } from './services/campaigns.service';
+export { lastMondays } from './services/scan-weeks';

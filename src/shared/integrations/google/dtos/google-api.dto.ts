@@ -91,3 +91,16 @@ export interface ListReviewsResponse {
   averageRating?: number;
   totalReviewCount?: number;
 }
+
+/** My Business Notifications API v1: `accounts/{a}/notificationSetting`. */
+export interface NotificationSettingResponse {
+  name?: string;
+  pubsubTopic?: string;
+  notificationTypes?: string[];
+}
+
+/** Cuerpo que Pub/Sub manda a una suscripcion push. `data` viene en base64. */
+export interface PubSubPushBody {
+  message?: { data?: string; messageId?: string; publishTime?: string; attributes?: Record<string, string> };
+  subscription?: string;
+}

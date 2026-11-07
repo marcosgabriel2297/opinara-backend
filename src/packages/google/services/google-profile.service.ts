@@ -15,6 +15,7 @@ import {
 import { LocationsService, PublicLocation, toPublicLocation } from '@packages/locations';
 
 import * as DTO from '../dtos';
+import { GoogleNotificationSettingsService } from './google-notification-settings.service';
 import { GoogleTokenService } from './google-token.service';
 
 export interface AvailableLocation extends GoogleLocation {
@@ -31,6 +32,7 @@ export class GoogleProfileService {
   constructor(
     private readonly tokenService: GoogleTokenService,
     private readonly locationsService: LocationsService,
+    private readonly notificationSettings: GoogleNotificationSettingsService,
     @Inject(GOOGLE_ACCOUNTS_ADAPTER) private readonly accounts: GoogleAccountsAdapter,
     @Inject(GOOGLE_LOCATIONS_ADAPTER) private readonly locations: GoogleLocationsAdapter,
   ) {}
@@ -74,6 +76,9 @@ export class GoogleProfileService {
     const imported = await Promise.all(
       selected.map((location) => this.locationsService.upsertFromGoogle(businessUrn, payload.accountName, location)),
     );
+
+    // Que Google avise cuando entra una reseña. No falla nunca: sin avisos, el cron sincroniza igual.
+    await this.notificationSettings.ensureForAccount(businessUrn, payload.accountName, accessToken);
 
     return imported.map(toPublicLocation);
   }

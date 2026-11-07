@@ -5,7 +5,11 @@ import {
   GoogleLocation,
   GoogleLocationRef,
   GoogleLocationsAdapter,
+  GoogleNotificationSetting,
+  GoogleNotificationsAdapter,
   GoogleOAuthAdapter,
+  GooglePushAdapter,
+  GoogleReviewNotification,
   GoogleReview,
   GoogleReviewPage,
   GoogleReviewReply,
@@ -13,6 +17,7 @@ import {
   GoogleTokens,
   ListReviewsOptions,
 } from '../src/shared/integrations/google/exports';
+import { GooglePushService } from '../src/shared/integrations/google/services';
 
 const HOUR_MS = 3600 * 1000;
 
@@ -228,6 +233,66 @@ export class FakeGoogleReviewsAdapter implements GoogleReviewsAdapter {
     this.deletedReplies.push(reviewId);
   }
 }
+
+/** Doble de la My Business Notifications API: una configuracion por cuenta. */
+export class FakeGoogleNotificationsAdapter implements GoogleNotificationsAdapter {
+  settings = new Map<string, GoogleNotificationSetting>();
+  error?: GoogleApiError;
+  updates: { accountName: string; pubsubTopic: string; notificationTypes: string[] }[] = [];
+
+  async getNotificationSetting(_accessToken: string, accountName: string): Promise<GoogleNotificationSetting> {
+    if (this.error) {
+      throw this.error;
+    }
+
+    return this.settings.get(accountName) ?? { name: `${accountName}/notificationSetting`, notificationTypes: [] };
+  }
+
+  async updateNotificationSetting(
+    _accessToken: string,
+    accountName: string,
+    setting: { pubsubTopic: string; notificationTypes: string[] },
+  ): Promise<GoogleNotificationSetting> {
+    if (this.error) {
+      throw this.error;
+    }
+
+    this.updates.push({ accountName, ...setting });
+    const stored = {
+      name: `${accountName}/notificationSetting`,
+      pubsubTopic: setting.pubsubTopic || undefined,
+      notificationTypes: setting.notificationTypes,
+    };
+    this.settings.set(accountName, stored);
+
+    return stored;
+  }
+}
+
+export const FAKE_PUSH_TOKEN = 'Bearer token-oidc-de-google';
+
+/** Doble del push de Pub/Sub: solo acepta `FAKE_PUSH_TOKEN`. El mensaje lo lee el parser real. */
+export class FakeGooglePushAdapter implements GooglePushAdapter {
+  private readonly real = new GooglePushService();
+
+  async verify(authorizationHeader: string | undefined): Promise<boolean> {
+    return authorizationHeader === FAKE_PUSH_TOKEN;
+  }
+
+  parse(body: unknown): GoogleReviewNotification | null {
+    return this.real.parse(body);
+  }
+}
+
+/** Cuerpo que manda una suscripcion push de Pub/Sub, con el aviso de Google en base64. */
+export const buildPubSubPush = (notification: Record<string, unknown>) => ({
+  message: {
+    data: Buffer.from(JSON.stringify(notification)).toString('base64'),
+    messageId: '1234567890',
+    publishTime: '2026-11-06T12:00:00.000Z',
+  },
+  subscription: 'projects/opinara/subscriptions/gbp-reviews-push',
+});
 
 export const buildGoogleReview = (overrides: Partial<GoogleReview> = {}): GoogleReview => ({
   reviewId: 'review-1',

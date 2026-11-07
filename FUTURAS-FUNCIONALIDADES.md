@@ -100,7 +100,11 @@ depende del cron. Sin la API aprobada no aparece nunca: solo se ve en Google.
   eso el aviso "Se actualizan solas con Google" del frontend promete algo que no pasa.
 
 **Paso B — notificaciones de Google por Pub/Sub (casi tiempo real).** Es la solución de fondo; ya
-estaba prevista como post-MVP en `ESTADO.md`.
+estaba prevista como post-MVP en `ESTADO.md`. **Programado el 2026-11-06** (rama
+`notificaciones-google`), apagado con `GOOGLE_NOTIFICATIONS_ENABLED=false` hasta que aprueben la API.
+Lo que falta es configurar Pub/Sub: *Avisos de reseñas por Pub/Sub* en `PUESTA-EN-MARCHA.md`. Con los
+avisos prendidos, el cron pasa solo a cada hora (respaldo), en vez de cada 5 minutos como decía el
+paso A.
 - Google avisa a Opinara cuando entra una reseña (evento `NEW_REVIEW`, también `UPDATED_REVIEW`),
   y Opinara sincroniza **solo esa sucursal** en el momento: la reseña aparece en segundos.
 - Necesita la API aprobada. La *My Business Notifications API* ya está habilitada en el proyecto.

@@ -50,6 +50,31 @@ export class LocationsRepository extends DatabaseRepository<Location> {
     return this.find({ isActive: true, source: { $ne: LocationSource.MANUAL } }, { sort: { businessUrn: 'asc' } });
   }
 
+  /**
+   * Sucursales de todos los tenants con ese id de Google: lo usa el aviso de Pub/Sub, que llega
+   * sin negocio. Puede haber mas de una si dos negocios importaron el mismo local.
+   */
+  findAllActiveByGoogleLocationId(googleLocationId: string): Promise<Location[]> {
+    return this.find({ googleLocationId, isActive: true, source: { $ne: LocationSource.MANUAL } });
+  }
+
+  /** Cuentas de Google con sucursales activas de un negocio (`accounts/{id}`, sin repetir). */
+  async findGoogleAccountNames(businessUrn: string): Promise<string[]> {
+    const locations = await this.findActiveForBusiness(businessUrn);
+    return [...new Set(locations.map((location) => location.googleAccountName))].sort();
+  }
+
+  /** Si otro negocio tiene sucursales activas en esa cuenta de Google (para no cortarle los avisos). */
+  async isGoogleAccountUsedElsewhere(googleAccountName: string, businessUrn: string): Promise<boolean> {
+    const others = await this.find({
+      googleAccountName,
+      businessUrn: { $ne: businessUrn },
+      isActive: true,
+      source: { $ne: LocationSource.MANUAL },
+    });
+    return others.length > 0;
+  }
+
   markReviewSync(urn: string, syncedAt: Date): Promise<Location | null> {
     return this.updateOne({ urn }, { $set: { lastReviewSyncAt: syncedAt } });
   }

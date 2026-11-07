@@ -32,6 +32,18 @@ export class GoogleHttpService {
     );
   }
 
+  async patch<T>(
+    operation: string,
+    url: string,
+    accessToken: string,
+    body: unknown,
+    query?: Record<string, QueryValue>,
+  ): Promise<T> {
+    return this.withRetry(operation, () =>
+      this.httpClient.patch<T>({ url, body, query, headers: this.authHeaders(accessToken) }),
+    );
+  }
+
   async delete<T>(operation: string, url: string, accessToken: string): Promise<T> {
     return this.withRetry(operation, () => this.httpClient.delete<T>({ url, headers: this.authHeaders(accessToken) }));
   }

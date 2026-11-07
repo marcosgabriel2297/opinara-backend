@@ -11,6 +11,10 @@ export default {
     TtlSeconds: toNumber(process.env.GOOGLE_OAUTH_STATE_TTL_SECONDS, 600),
     Bytes: 32,
   },
+  Notifications: {
+    /** Reconciliacion diaria de los avisos de todas las cuentas (formato con segundos). */
+    ReconcileCron: process.env.GOOGLE_NOTIFICATIONS_RECONCILE_CRON ?? '0 30 3 * * *',
+  },
   Throttle: {
     /** El callback es publico: se limita aparte del resto. */
     Limit: toNumber(process.env.GOOGLE_CALLBACK_THROTTLE_LIMIT, 20),

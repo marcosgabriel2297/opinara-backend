@@ -13,6 +13,10 @@ export default {
     /** Pedidos por minuto y por IP: cada uno gasta cuota (o plata) del proveedor del modelo. */
     ThrottleLimit: toNumber(process.env.REPLY_SUGGESTIONS_THROTTLE_LIMIT, 30),
   },
+  Notifications: {
+    /** Avisos de Pub/Sub por minuto e IP. Llegan de Google: el tope solo frena abusos. */
+    ThrottleLimit: toNumber(process.env.GOOGLE_NOTIFICATIONS_THROTTLE_LIMIT, 600),
+  },
   Sync: {
     /**
      * Solapamiento hacia atras del corte incremental. Google ordena por `updateTime` con
@@ -23,8 +27,13 @@ export default {
     /** Tope duro de paginas por location: 50 reseñas por pagina. */
     MaxPages: toNumber(process.env.REVIEW_SYNC_MAX_PAGES, 100),
     Enabled: process.env.REVIEW_SYNC_ENABLED !== 'false',
-    /** Cada cuanto corre la sincronizacion incremental. */
-    Cron: process.env.REVIEW_SYNC_CRON ?? '0 */15 * * * *',
+    /**
+     * Cada cuanto corre la sincronizacion incremental. Con los avisos de Google prendidos el cron
+     * es solo un respaldo (por si se pierde un aviso): alcanza con una vez por hora.
+     */
+    Cron:
+      process.env.REVIEW_SYNC_CRON ??
+      (process.env.GOOGLE_NOTIFICATIONS_ENABLED === 'true' ? '0 0 * * * *' : '0 */15 * * * *'),
     /** Reconciliacion completa: detecta reseñas borradas en Google. */
     FullCron: process.env.REVIEW_SYNC_FULL_CRON ?? '0 0 3 * * *',
   },

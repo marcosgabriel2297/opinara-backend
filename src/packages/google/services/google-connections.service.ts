@@ -26,6 +26,8 @@ import {
   toPublicConnection,
 } from '../models';
 import { AuthorizationRequest, CallbackResult } from '../interfaces';
+import { GoogleNotificationSettingsService } from './google-notification-settings.service';
+import { GoogleTokenService } from './google-token.service';
 
 const MILLIS = 1000;
 
@@ -37,6 +39,8 @@ export class GoogleConnectionsService {
     private readonly connectionsRepository: GoogleConnectionsRepository,
     private readonly statesRepository: OAuthStatesRepository,
     private readonly cryptoService: CryptoService,
+    private readonly notificationSettings: GoogleNotificationSettingsService,
+    private readonly tokenService: GoogleTokenService,
     @Inject(GOOGLE_OAUTH_ADAPTER) private readonly oauth: GoogleOAuthAdapter,
   ) {}
 
@@ -122,11 +126,29 @@ export class GoogleConnectionsService {
       Exceptions.notFound(Errors.GOOGLE_CONNECTION_NOT_FOUND);
     }
 
+    // Antes de revocar: despues ya no hay token para pedirle a Google que deje de avisar.
+    await this.disableNotifications(businessUrn);
     await this.oauth.revokeToken(this.cryptoService.decrypt(connection.refreshToken));
     await this.connectionsRepository.deleteOne({ urn: connection.urn });
     await this.statesRepository.deleteForBusiness(businessUrn);
 
     this.logger.log(`Google connection removed for business ${businessUrn}`);
+  }
+
+  /** Best-effort: una conexion ya revocada no tiene token, y eso no puede impedir desconectar. */
+  private async disableNotifications(businessUrn: string): Promise<void> {
+    if (!this.notificationSettings.enabled) {
+      return;
+    }
+
+    try {
+      const accessToken = await this.tokenService.getAccessToken(businessUrn);
+      await this.notificationSettings.disableForBusiness(businessUrn, accessToken);
+    } catch (error) {
+      this.logger.warn(
+        `Skipping notifications cleanup for ${businessUrn}: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
+    }
   }
 
   /**

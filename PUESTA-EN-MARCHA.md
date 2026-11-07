@@ -178,6 +178,9 @@ punta**: escaneo, opinión interna y salto al formulario de reseña del local co
 ### Etapa 2 — Cuando Google aprueba (~30 min, con el compañero disponible)
 
 - [ ] Confirmar cuota en 300 QPM y habilitar la Google My Business API.
+- [ ] **Avisos en tiempo real (Pub/Sub)**, antes de importar: así la importación ya registra la
+      cuenta. Si se hace después, la reconciliación diaria (3:30) la registra sola. Ver
+      *Avisos de reseñas por Pub/Sub* más abajo.
 - [ ] **El compañero** (la cuenta gerente) conecta desde el dashboard: `POST /google/connect` → autoriza.
 - [ ] Importar la sucursal: `GET /google/accounts` → `GET /google/locations?accountName=…` →
       `POST /google/locations/import`. La importación **adopta la sucursal manual por Place ID**:
@@ -185,7 +188,59 @@ punta**: escaneo, opinión interna y salto al formulario de reseña del local co
       sola** sucursal en el listado y que pase a `source: "GOOGLE"`.
 - [ ] Primera sincronización completa: `POST /businesses/:businessUrn/google/sync`.
 - [ ] Responder una reseña desde el dashboard y confirmarlo en Google Maps.
-- [ ] Activar el cron: `REVIEW_SYNC_ENABLED=true` y reiniciar.
+- [ ] Activar el cron: `REVIEW_SYNC_ENABLED=true` y reiniciar. Con los avisos prendidos corre cada
+      hora como respaldo; sin ellos, cada 15 minutos.
+- [ ] Dejar una reseña de prueba en el local y verla aparecer en Opinara en segundos. En el log:
+      `Synced urn:location:…` sin que haya pasado el cron.
+
+#### Avisos de reseñas por Pub/Sub
+
+Google empuja un aviso por cada reseña nueva o editada y Opinara sincroniza **solo esa sucursal**.
+**Costo:** la API de Business Profile es gratis; Pub/Sub tiene una capa gratuita de 10 GB por mes y cada
+aviso pesa unos pocos KB, así que en la práctica es cero. Igual conviene una alerta de presupuesto.
+
+```bash
+P=opinara
+API=https://api.opinara.com.ar/api/google/notifications
+gcloud services enable pubsub.googleapis.com --project=$P
+
+# 1. El topic, con permiso de publicación para Google Business Profile
+gcloud pubsub topics create gbp-reviews --project=$P
+gcloud pubsub topics add-iam-policy-binding gbp-reviews --project=$P \
+  --member=serviceAccount:mybusiness-api-pubsub@system.gserviceaccount.com --role=roles/pubsub.publisher
+
+# 2. La cuenta de servicio que firma los avisos que recibe el backend
+gcloud iam service-accounts create pubsub-push --project=$P --display-name="Pub/Sub push a Opinara"
+
+# 3. La suscripción push al backend, con token OIDC
+gcloud pubsub subscriptions create gbp-reviews-push --project=$P --topic=gbp-reviews \
+  --push-endpoint=$API \
+  --push-auth-service-account=pubsub-push@$P.iam.gserviceaccount.com \
+  --push-auth-token-audience=$API \
+  --ack-deadline=30 --min-retry-delay=10s --max-retry-delay=600s --message-retention-duration=1d
+```
+
+Variables del backend (`.env.prod`) y reiniciar:
+
+```
+GOOGLE_NOTIFICATIONS_ENABLED=true
+GOOGLE_NOTIFICATIONS_TOPIC=projects/opinara/topics/gbp-reviews
+GOOGLE_NOTIFICATIONS_AUDIENCE=https://api.opinara.com.ar/api/google/notifications
+GOOGLE_NOTIFICATIONS_PUSH_SERVICE_ACCOUNT=pubsub-push@opinara.iam.gserviceaccount.com
+```
+
+- El endpoint rechaza con 401 todo lo que no venga firmado por esa cuenta de servicio y con esa
+  audiencia. Con `GOOGLE_NOTIFICATIONS_ENABLED=false` responde 404.
+- **Verificar el formato del primer aviso real.** Google documenta que trae `location_name` y
+  `review_name`, pero no publica un ejemplo del JSON; el backend busca el nombre de la sucursal en
+  cualquier campo. Si en el log aparece `Ignored a Google notification without a recognizable
+  location`, mirar el mensaje en la consola de Pub/Sub y ajustar `GooglePushService.parse`.
+- **Un solo topic por cuenta de Google.** Si el negocio ya usa otra herramienta que configuró sus
+  avisos, Opinara no la pisa: la cuenta queda en `CONFLICT` (en `google_connections.notificationAccounts`)
+  y ese negocio se sincroniza solo con el cron.
+- Si la suscripción da error de token, falta que el agente de Pub/Sub pueda firmar como la cuenta de
+  servicio: rol `roles/iam.serviceAccountTokenCreator` para
+  `service-<NÚMERO_DE_PROYECTO>@gcp-sa-pubsub.iam.gserviceaccount.com`.
 
 ### Etapa 3 — Dejar de ser piloto
 
@@ -206,5 +261,7 @@ punta**: escaneo, opinión interna y salto al formulario de reseña del local co
 | `GOOGLE_PERMISSION_DENIED` | le sacaron el acceso al perfil a nuestra cuenta, o la API no está habilitada en el proyecto |
 | `GOOGLE_MISSING_REFRESH_TOKEN` | esa cuenta ya había autorizado antes: revocar en su cuenta de Google y reconectar |
 | `GOOGLE_CONNECTION_REVOKED` a los 7 días | la app sigue en Testing → Etapa 3 |
+| Log `Ignored a Google notification without a recognizable location` | Google mandó el aviso con un formato que el backend no reconoce: ver *Avisos de reseñas por Pub/Sub* |
+| `POST /api/google/notifications` da 401 en la consola de Pub/Sub | `GOOGLE_NOTIFICATIONS_AUDIENCE` o `…_PUSH_SERVICE_ACCOUNT` no coinciden con la suscripción |
 | `LOCATION_NOT_SYNCABLE` | la sucursal es manual y todavía no se importó de Google |
 | `GOOGLE_RATE_LIMITED` con la API ya aprobada | 300 QPM por proyecto, compartidos entre todos los negocios |

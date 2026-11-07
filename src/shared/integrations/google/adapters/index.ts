@@ -100,7 +100,49 @@ export interface GoogleReviewsAdapter {
   deleteReply(accessToken: string, ref: GoogleLocationRef, reviewId: string): Promise<void>;
 }
 
+/** Tipos de aviso que pide Opinara: reseña nueva y reseña editada. */
+export const REVIEW_NOTIFICATION_TYPES = ['NEW_REVIEW', 'UPDATED_REVIEW'] as const;
+
+/** Configuracion de avisos de una cuenta de Google. Hay una sola por cuenta y un solo topic. */
+export interface GoogleNotificationSetting {
+  /** `accounts/{accountId}/notificationSetting` */
+  name?: string;
+  /** `projects/{proyecto}/topics/{topic}`. Vacio: la cuenta no manda avisos. */
+  pubsubTopic?: string;
+  notificationTypes: string[];
+}
+
+export interface GoogleNotificationsAdapter {
+  getNotificationSetting(accessToken: string, accountName: string): Promise<GoogleNotificationSetting>;
+  /** Reemplaza topic y tipos. Con topic vacio y sin tipos, la cuenta deja de mandar avisos. */
+  updateNotificationSetting(
+    accessToken: string,
+    accountName: string,
+    setting: { pubsubTopic: string; notificationTypes: string[] },
+  ): Promise<GoogleNotificationSetting>;
+}
+
+/** Lo que importa de un aviso de Google: que sucursal cambio. */
+export interface GoogleReviewNotification {
+  /** `accounts/{accountId}`, si el aviso lo trae. */
+  accountName?: string;
+  locationId: string;
+}
+
+/**
+ * Avisos que Google empuja via Pub/Sub. Verificar el origen y leer el formato del mensaje son
+ * cosas de Google: el dominio solo recibe el resultado.
+ */
+export interface GooglePushAdapter {
+  /** `true` solo si el header `Authorization` trae un token OIDC de Google para nosotros. */
+  verify(authorizationHeader: string | undefined): Promise<boolean>;
+  /** `null` si el mensaje no trae una sucursal reconocible. */
+  parse(body: unknown): GoogleReviewNotification | null;
+}
+
 export const GOOGLE_OAUTH_ADAPTER = Symbol('GOOGLE_OAUTH_ADAPTER');
 export const GOOGLE_ACCOUNTS_ADAPTER = Symbol('GOOGLE_ACCOUNTS_ADAPTER');
 export const GOOGLE_LOCATIONS_ADAPTER = Symbol('GOOGLE_LOCATIONS_ADAPTER');
 export const GOOGLE_REVIEWS_ADAPTER = Symbol('GOOGLE_REVIEWS_ADAPTER');
+export const GOOGLE_NOTIFICATIONS_ADAPTER = Symbol('GOOGLE_NOTIFICATIONS_ADAPTER');
+export const GOOGLE_PUSH_ADAPTER = Symbol('GOOGLE_PUSH_ADAPTER');

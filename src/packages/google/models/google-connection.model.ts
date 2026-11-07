@@ -2,7 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 
 import { EncryptedValue } from '@shared/common/crypto';
-import { GoogleConnectionStatus } from '@shared/models/enums/google';
+import { GoogleConnectionStatus, GoogleNotificationsStatus } from '@shared/models/enums/google';
 import { Entity } from '@shared/repositories';
 
 export const GOOGLE_CONNECTION_ENTITY = 'google-connection';
@@ -23,6 +23,22 @@ class EncryptedToken implements EncryptedValue {
 }
 
 const EncryptedTokenSchema = SchemaFactory.createForClass(EncryptedToken);
+
+/** Avisos en tiempo real de una de las cuentas de Google del negocio. */
+@Schema({ _id: false })
+export class NotificationAccount {
+  /** `accounts/{accountId}` */
+  @Prop({ required: true })
+  accountName!: string;
+
+  @Prop({ required: true, enum: GoogleNotificationsStatus })
+  status!: GoogleNotificationsStatus;
+
+  @Prop({ required: true })
+  checkedAt!: Date;
+}
+
+const NotificationAccountSchema = SchemaFactory.createForClass(NotificationAccount);
 
 /**
  * Conexion OAuth de un business con su Google Business Profile.
@@ -65,6 +81,10 @@ export class GoogleConnection implements Entity {
 
   @Prop({ required: false })
   lastSyncAt?: Date;
+
+  /** Estado de los avisos por cuenta de Google. Vacio: nunca se registraron. */
+  @Prop({ type: [NotificationAccountSchema], required: false, default: [] })
+  notificationAccounts?: NotificationAccount[];
 
   declare createdAt?: Date;
   declare updatedAt?: Date;

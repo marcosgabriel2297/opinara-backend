@@ -9,7 +9,7 @@ import { TextGenerationIntegrationModule } from '@shared/integrations/text-gener
 import * as Controllers from './controllers';
 import { Review, ReviewSchema, ReviewsRepository } from './models';
 import * as Services from './services';
-import { REPLY_SUGGESTER, ReplySuggesterService, ReviewSyncScheduler } from './services';
+import { REPLY_SUGGESTER, ReplySuggesterService, ReviewSyncQueue, ReviewSyncScheduler } from './services';
 
 @Module({
   imports: [
@@ -21,11 +21,12 @@ import { REPLY_SUGGESTER, ReplySuggesterService, ReviewSyncScheduler } from './s
     TextGenerationIntegrationModule,
     LocationsModule,
   ],
-  controllers: [Controllers.Reviews, Controllers.BusinessReviews, Controllers.Sync],
+  controllers: [Controllers.Reviews, Controllers.BusinessReviews, Controllers.Sync, Controllers.Notifications],
   providers: [
     Services.Reviews,
     Services.Sync,
     ReviewSyncScheduler,
+    ReviewSyncQueue,
     ReviewsRepository,
     { provide: REPLY_SUGGESTER, useClass: ReplySuggesterService },
   ],

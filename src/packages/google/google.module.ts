@@ -29,6 +29,8 @@ import * as Services from './services';
     Services.Connections,
     Services.Profile,
     Services.Token,
+    Services.NotificationSettings,
+    Services.NotificationsScheduler,
     GoogleConnectionsRepository,
     OAuthStatesRepository,
   ],

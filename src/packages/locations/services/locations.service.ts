@@ -90,6 +90,20 @@ export class LocationsService {
     return this.locationsRepository.findActiveForBusiness(businessUrn);
   }
 
+  /** Solo para el aviso de Pub/Sub, que llega sin negocio. Filtra por cuenta si el aviso la trae. */
+  async findAllActiveByGoogleRef(locationId: string, accountName?: string): Promise<Location[]> {
+    const locations = await this.locationsRepository.findAllActiveByGoogleLocationId(locationId);
+    return accountName ? locations.filter((location) => location.googleAccountName === accountName) : locations;
+  }
+
+  findGoogleAccountNames(businessUrn: string): Promise<string[]> {
+    return this.locationsRepository.findGoogleAccountNames(businessUrn);
+  }
+
+  isGoogleAccountUsedElsewhere(googleAccountName: string, businessUrn: string): Promise<boolean> {
+    return this.locationsRepository.isGoogleAccountUsedElsewhere(googleAccountName, businessUrn);
+  }
+
   /**
    * Marca el momento en que arranco la ultima sincronizacion exitosa.
    * Se guarda el inicio y no el fin para no perder reseñas que hayan cambiado durante la corrida.

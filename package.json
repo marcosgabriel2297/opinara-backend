@@ -16,6 +16,7 @@
     "db:down": "docker compose down",
     "mongo:local": "node scripts/mongo-local.js",
     "seed": "ts-node -r tsconfig-paths/register scripts/seed.ts",
+    "seed:demo": "ts-node -r tsconfig-paths/register scripts/seed-demo.ts",
     "admin:create": "ts-node -r tsconfig-paths/register scripts/create-admin.ts",
     "db:quitar-opiniones": "ts-node -r tsconfig-paths/register scripts/migrations/2026-10-25-quitar-opiniones-internas.ts",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",

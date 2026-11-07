@@ -37,6 +37,8 @@ export const createTestApp = async (
   process.env.AUTH_THROTTLE_LIMIT = '10000';
   process.env.GOOGLE_CALLBACK_THROTTLE_LIMIT = '10000';
   process.env.PUBLIC_THROTTLE_LIMIT = '10000';
+  process.env.LOYALTY_REGISTER_THROTTLE_LIMIT = '10000';
+  process.env.LOYALTY_RESEND_THROTTLE_LIMIT = '10000';
 
   for (const [key, value] of Object.entries(env)) {
     process.env[key] = value;

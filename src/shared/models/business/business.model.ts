@@ -3,6 +3,7 @@ import { HydratedDocument } from 'mongoose';
 
 import { Entity } from '@shared/repositories';
 import { BusinessStatus } from '../enums/business';
+import { BusinessPlan, DEFAULT_BUSINESS_PLAN, Feature, featuresOf } from '../enums/plan';
 
 export const BUSINESS_ENTITY = 'business';
 
@@ -31,6 +32,10 @@ export class Business implements Entity {
   @Prop({ required: false, trim: true })
   timezone?: string;
 
+  /** Qué funcionalidades tiene (ver `PLAN_FEATURES`). Los negocios viejos no lo tienen: cuentan como `REVIEWS`. */
+  @Prop({ required: false, enum: BusinessPlan, default: DEFAULT_BUSINESS_PLAN })
+  plan?: BusinessPlan;
+
   /** Cuando se subio el logo actual (la imagen esta en `business_logos`); sin logo, no existe. */
   @Prop({ required: false })
   logoUpdatedAt?: Date;
@@ -51,6 +56,9 @@ export interface PublicBusiness {
   createdAt?: Date;
   /** Version del logo para su URL publica (`/public/businesses/{slug}/logo?v=`); `null` sin logo. */
   logoUpdatedAt: Date | null;
+  plan: BusinessPlan;
+  /** Lo que habilita el plan. El frontend decide por esto, nunca por el nombre del plan. */
+  features: readonly Feature[];
 }
 
 export const toPublicBusiness = (business: Business): PublicBusiness => ({
@@ -61,4 +69,6 @@ export const toPublicBusiness = (business: Business): PublicBusiness => ({
   timezone: business.timezone,
   createdAt: business.createdAt,
   logoUpdatedAt: business.logoUpdatedAt ?? null,
+  plan: business.plan ?? DEFAULT_BUSINESS_PLAN,
+  features: featuresOf(business.plan),
 });

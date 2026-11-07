@@ -10,6 +10,7 @@ import { BusinessMemberRole, BusinessMemberStatus, BusinessStatus } from '@share
 import { CampaignStatus } from '@shared/models/enums/campaign';
 import { GoogleConnectionStatus } from '@shared/models/enums/google';
 import { LocationSource } from '@shared/models/enums/location';
+import { BusinessPlan, DEFAULT_BUSINESS_PLAN } from '@shared/models/enums/plan';
 import { User } from '@shared/models/user';
 import { escapeRegex } from '@shared/utils';
 import { Campaign, ScanEvent } from '@packages/campaigns';
@@ -40,6 +41,7 @@ export interface AdminBusinessRow {
   name: string;
   slug: string;
   status: BusinessStatus;
+  plan: BusinessPlan;
   createdAt: Date | null;
   owner: { urn: string; name: string; email: string } | null;
   members: number;
@@ -113,6 +115,28 @@ export class AdminBusinessesService {
     }
 
     // Sin cambio: o ya estaba así (devuelve el detalle) o no existe (`detail` responde 404).
+    return this.detail(urn);
+  }
+
+  /**
+   * Cambia el plan del negocio. Mientras no haya cobro, es la unica forma de cambiarlo. Bajar de
+   * plan no borra nada: lo que el plan ya no incluye deja de funcionar y vuelve si se sube otra vez.
+   * Repetir el mismo plan no deja otro evento.
+   */
+  async setPlan(admin: AuthenticatedAdmin, urn: string, plan: BusinessPlan): Promise<AdminBusinessDetail> {
+    const previous = await this.businessModel
+      .findOneAndUpdate({ urn, plan: { $ne: plan } }, { $set: { plan } }, { new: false })
+      .lean<Business | null>()
+      .exec();
+
+    if (previous) {
+      await this.audit.record(admin, AuditAction.BUSINESS_PLAN_CHANGED, {
+        type: AuditTargetType.BUSINESS,
+        urn: previous.urn,
+        label: `${previous.name}: ${previous.plan ?? DEFAULT_BUSINESS_PLAN} → ${plan}`,
+      });
+    }
+
     return this.detail(urn);
   }
 
@@ -194,6 +218,7 @@ export class AdminBusinessesService {
         name: business.name,
         slug: business.slug,
         status: business.status,
+        plan: business.plan ?? DEFAULT_BUSINESS_PLAN,
         createdAt: business.createdAt ?? null,
         owner: owner ? { urn: owner.urn, name: owner.name, email: owner.email } : null,
         members: members.get(business.urn) ?? 0,
@@ -242,6 +267,7 @@ export class AdminBusinessesService {
       name: business.name,
       slug: business.slug,
       status: business.status,
+      plan: business.plan ?? DEFAULT_BUSINESS_PLAN,
       timezone: business.timezone ?? null,
       createdAt: business.createdAt ?? null,
       owner: owner ? { urn: owner.urn, name: owner.name, email: owner.email } : null,

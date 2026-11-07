@@ -3,7 +3,13 @@ import { Reflector } from '@nestjs/core';
 
 import { Business, BusinessMember, BusinessMembersRepository, BusinessesRepository } from '@shared/models/business';
 import { BusinessMemberRole, BusinessMemberStatus, BusinessStatus } from '@shared/models/enums/business';
-import { BUSINESS_ROLES_KEY, BusinessMembershipGuard, BusinessRequest } from './business-membership.guard';
+import { BusinessPlan, Feature } from '@shared/models/enums/plan';
+import {
+  BUSINESS_FEATURE_KEY,
+  BUSINESS_ROLES_KEY,
+  BusinessMembershipGuard,
+  BusinessRequest,
+} from './business-membership.guard';
 
 const BUSINESS_URN = 'urn:business:11111111-1111-1111-1111-111111111111';
 const USER = {
@@ -43,10 +49,14 @@ const buildGuard = (
   membership: BusinessMember | null,
   roles?: BusinessMemberRole[],
   business: Business | null = businessWith(BusinessStatus.ACTIVE),
+  feature?: Feature,
 ) => {
   const repository = { findActiveMembership: jest.fn().mockResolvedValue(membership) };
   const businesses = { one: jest.fn().mockResolvedValue(business) };
-  const reflector = { getAllAndOverride: jest.fn().mockReturnValue(roles) } as unknown as Reflector;
+  const metadata: Record<string, unknown> = { [BUSINESS_ROLES_KEY]: roles, [BUSINESS_FEATURE_KEY]: feature };
+  const reflector = {
+    getAllAndOverride: jest.fn((key: string) => metadata[key]),
+  } as unknown as Reflector;
 
   return {
     guard: new BusinessMembershipGuard(
@@ -147,5 +157,49 @@ describe('BusinessMembershipGuard', () => {
     await guard.canActivate(context);
 
     expect(reflector.getAllAndOverride).toHaveBeenCalledWith(BUSINESS_ROLES_KEY, expect.any(Array));
+  });
+
+  describe('funcionalidades del plan', () => {
+    const withPlan = (plan?: BusinessPlan): Business => ({ ...businessWith(BusinessStatus.ACTIVE), plan });
+
+    it('responde 403 PLAN_FEATURE_NOT_INCLUDED si el plan no la incluye', async () => {
+      const { guard } = buildGuard(
+        membershipWith(BusinessMemberRole.OWNER),
+        undefined,
+        withPlan(BusinessPlan.REVIEWS),
+        Feature.LOYALTY,
+      );
+      const { context } = buildContext({ user: USER, params: { businessUrn: BUSINESS_URN } });
+
+      await expect(guard.canActivate(context)).rejects.toMatchObject({
+        response: { error: 'PLAN_FEATURE_NOT_INCLUDED' },
+      });
+    });
+
+    it('un negocio sin plan cuenta como el de entrada', async () => {
+      const { guard } = buildGuard(membershipWith(BusinessMemberRole.OWNER), undefined, withPlan(), Feature.LOYALTY);
+      const { context } = buildContext({ user: USER, params: { businessUrn: BUSINESS_URN } });
+
+      await expect(guard.canActivate(context)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('deja pasar si el plan la incluye', async () => {
+      const { guard } = buildGuard(
+        membershipWith(BusinessMemberRole.MEMBER),
+        undefined,
+        withPlan(BusinessPlan.REVIEWS_LOYALTY),
+        Feature.LOYALTY,
+      );
+      const { context } = buildContext({ user: USER, params: { businessUrn: BUSINESS_URN } });
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+    });
+
+    it('a quien no es miembro le sigue respondiendo 404, aunque falte el plan', async () => {
+      const { guard } = buildGuard(null, undefined, withPlan(BusinessPlan.REVIEWS), Feature.LOYALTY);
+      const { context } = buildContext({ user: USER, params: { businessUrn: BUSINESS_URN } });
+
+      await expect(guard.canActivate(context)).rejects.toBeInstanceOf(NotFoundException);
+    });
   });
 });

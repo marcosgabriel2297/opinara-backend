@@ -2,10 +2,16 @@ import { applyDecorators, SetMetadata, UseGuards, createParamDecorator, Executio
 
 import { Business, BusinessMember } from '@shared/models/business';
 import { BusinessMemberRole } from '@shared/models/enums/business';
+import { Feature } from '@shared/models/enums/plan';
 import { Errors } from '../errors';
 import { Exceptions } from '../exceptions';
 import { AuthGuard } from '../guards/auth.guard';
-import { BUSINESS_ROLES_KEY, BusinessMembershipGuard, BusinessRequest } from '../guards/business-membership.guard';
+import {
+  BUSINESS_FEATURE_KEY,
+  BUSINESS_ROLES_KEY,
+  BusinessMembershipGuard,
+  BusinessRequest,
+} from '../guards/business-membership.guard';
 
 /**
  * Protege un endpoint anidado bajo `:businessUrn`: exige token valido y membresia activa.
@@ -14,6 +20,12 @@ import { BUSINESS_ROLES_KEY, BusinessMembershipGuard, BusinessRequest } from '..
 export function BusinessAccess(...roles: BusinessMemberRole[]) {
   return applyDecorators(SetMetadata(BUSINESS_ROLES_KEY, roles), UseGuards(AuthGuard, BusinessMembershipGuard));
 }
+
+/**
+ * Exige que el plan del negocio incluya la funcionalidad. Va junto a `@BusinessAccess()` (sobre el
+ * controller o el handler): lo chequea el mismo guard, despues de la membresia.
+ */
+export const RequiresFeature = (feature: Feature) => SetMetadata(BUSINESS_FEATURE_KEY, feature);
 
 /** Business de la ruta, ya validado y cargado por el guard. Solo valido con `@BusinessAccess()`. */
 export const GetBusiness = createParamDecorator((_data: unknown, ctx: ExecutionContext): Business => {

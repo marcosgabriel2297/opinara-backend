@@ -11,5 +11,5 @@ export {
   ListAdminReviewsDto as ListReviews,
 } from './admin-reviews.dto';
 export { OverviewQueryDto as Overview, ScansQueryDto as Scans } from './admin-stats.dto';
-export { ListAdminBusinessesDto as ListBusinesses } from './admin-businesses.dto';
+export { ListAdminBusinessesDto as ListBusinesses, SetBusinessPlanDto as SetPlan } from './admin-businesses.dto';
 export { ListAuditDto as ListAudit } from './admin-audit.dto';

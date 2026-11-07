@@ -3,3 +3,4 @@ export * from './campaign';
 export * from './google';
 export * from './location';
 export * from './user';
+export * from './plan';

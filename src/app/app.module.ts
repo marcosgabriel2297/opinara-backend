@@ -13,6 +13,7 @@ import { CampaignsModule } from '@packages/campaigns';
 import { GoogleModule } from '@packages/google';
 import { HealthModule } from '@packages/health';
 import { LocationsModule } from '@packages/locations';
+import { LoyaltyModule } from '@packages/loyalty';
 import { MembersModule } from '@packages/members';
 import { PublicModule } from '@packages/public';
 import { ReviewsModule } from '@packages/reviews';
@@ -68,6 +69,7 @@ const routers = [
     CampaignsModule,
     PublicModule,
     MembersModule,
+    LoyaltyModule,
     HealthModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: AppThrottlerGuard }],

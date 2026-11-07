@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
 
 import { BusinessStatus } from '@shared/models/enums/business';
 
@@ -37,5 +37,16 @@ export class AdminBusinessesController {
   @HttpCode(HttpStatus.OK)
   reactivate(@GetAdmin() admin: AuthenticatedAdmin, @Param('businessUrn') businessUrn: string) {
     return this.service.setStatus(admin, businessUrn, BusinessStatus.ACTIVE);
+  }
+
+  /** Cambia el plan a mano, mientras no haya cobro. */
+  @Post('/:businessUrn/plan')
+  @HttpCode(HttpStatus.OK)
+  setPlan(
+    @GetAdmin() admin: AuthenticatedAdmin,
+    @Param('businessUrn') businessUrn: string,
+    @Body() payload: DTO.SetPlan,
+  ) {
+    return this.service.setPlan(admin, businessUrn, payload.plan);
   }
 }

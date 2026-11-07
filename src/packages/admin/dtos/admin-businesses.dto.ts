@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import { IsEnum, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
 import { BusinessStatus } from '@shared/models/enums/business';
+import { BusinessPlan } from '@shared/models/enums/plan';
 
 import { ADMIN_MAX_PAGE_SIZE } from './admin-reviews.dto';
 
@@ -40,4 +41,9 @@ export class ListAdminBusinessesDto {
   @Min(1)
   @Max(ADMIN_MAX_PAGE_SIZE)
   limit?: number;
+}
+
+export class SetBusinessPlanDto {
+  @IsEnum(BusinessPlan)
+  plan!: BusinessPlan;
 }

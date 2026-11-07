@@ -29,6 +29,7 @@ export enum Errors {
   BUSINESS_SLUG_ALREADY_EXISTS = 'BUSINESS_SLUG_ALREADY_EXISTS',
   BUSINESS_FORBIDDEN = 'BUSINESS_FORBIDDEN',
   BUSINESS_SUSPENDED = 'BUSINESS_SUSPENDED',
+  PLAN_FEATURE_NOT_INCLUDED = 'PLAN_FEATURE_NOT_INCLUDED',
   LOGO_INVALID_IMAGE = 'LOGO_INVALID_IMAGE',
   LOGO_TOO_LARGE = 'LOGO_TOO_LARGE',
   LOGO_NOT_FOUND = 'LOGO_NOT_FOUND',
@@ -69,6 +70,20 @@ export enum Errors {
   CAMPAIGN_SLUG_ALREADY_EXISTS = 'CAMPAIGN_SLUG_ALREADY_EXISTS',
   CAMPAIGN_INACTIVE = 'CAMPAIGN_INACTIVE',
   LOCATION_NOT_REVIEWABLE = 'LOCATION_NOT_REVIEWABLE',
+
+  // Fidelizacion (tarjeta de sellos)
+  LOYALTY_PROGRAM_NOT_FOUND = 'LOYALTY_PROGRAM_NOT_FOUND',
+  LOYALTY_PROGRAM_PAUSED = 'LOYALTY_PROGRAM_PAUSED',
+  LOYALTY_PROGRAM_ALREADY_EXISTS = 'LOYALTY_PROGRAM_ALREADY_EXISTS',
+  LOYALTY_PROGRAM_SLUG_ALREADY_EXISTS = 'LOYALTY_PROGRAM_SLUG_ALREADY_EXISTS',
+  LOYALTY_MEMBER_NOT_FOUND = 'LOYALTY_MEMBER_NOT_FOUND',
+  LOYALTY_CARD_NOT_FOUND = 'LOYALTY_CARD_NOT_FOUND',
+  LOYALTY_ALREADY_REGISTERED = 'LOYALTY_ALREADY_REGISTERED',
+  LOYALTY_INVALID_PHONE = 'LOYALTY_INVALID_PHONE',
+  LOYALTY_WRONG_LOCATION = 'LOYALTY_WRONG_LOCATION',
+  LOYALTY_STAMP_COOLDOWN = 'LOYALTY_STAMP_COOLDOWN',
+  LOYALTY_NOT_ENOUGH_STAMPS = 'LOYALTY_NOT_ENOUGH_STAMPS',
+  LOYALTY_UNDO_NOT_ALLOWED = 'LOYALTY_UNDO_NOT_ALLOWED',
 }
 
 export const ErrorMessages: Record<Errors, string> = {
@@ -99,6 +114,7 @@ export const ErrorMessages: Record<Errors, string> = {
   [Errors.BUSINESS_SLUG_ALREADY_EXISTS]: 'The business slug is already taken',
   [Errors.BUSINESS_FORBIDDEN]: 'You do not have access to this business',
   [Errors.BUSINESS_SUSPENDED]: 'The business is suspended',
+  [Errors.PLAN_FEATURE_NOT_INCLUDED]: 'The business plan does not include this feature',
   [Errors.LOGO_INVALID_IMAGE]: 'The logo must be a PNG, JPEG or WebP image',
   [Errors.LOGO_TOO_LARGE]: 'The logo is too large',
   [Errors.LOGO_NOT_FOUND]: 'The business has no logo',
@@ -134,4 +150,17 @@ export const ErrorMessages: Record<Errors, string> = {
   [Errors.CAMPAIGN_SLUG_ALREADY_EXISTS]: 'The campaign slug is already taken for this business',
   [Errors.CAMPAIGN_INACTIVE]: 'The campaign is not active',
   [Errors.LOCATION_NOT_REVIEWABLE]: 'The location has no Google review link available',
+
+  [Errors.LOYALTY_PROGRAM_NOT_FOUND]: 'Loyalty program not found',
+  [Errors.LOYALTY_PROGRAM_PAUSED]: 'The loyalty program is paused',
+  [Errors.LOYALTY_PROGRAM_ALREADY_EXISTS]: 'The location already has a loyalty program',
+  [Errors.LOYALTY_PROGRAM_SLUG_ALREADY_EXISTS]: 'The loyalty program slug is already taken for this business',
+  [Errors.LOYALTY_MEMBER_NOT_FOUND]: 'Loyalty card not found',
+  [Errors.LOYALTY_CARD_NOT_FOUND]: 'The card link is invalid or the card no longer exists',
+  [Errors.LOYALTY_ALREADY_REGISTERED]: 'The phone already has a card in this program',
+  [Errors.LOYALTY_INVALID_PHONE]: 'The phone number is not valid',
+  [Errors.LOYALTY_WRONG_LOCATION]: 'The card belongs to another location',
+  [Errors.LOYALTY_STAMP_COOLDOWN]: 'The card got a stamp a moment ago, wait before adding another',
+  [Errors.LOYALTY_NOT_ENOUGH_STAMPS]: 'The card does not have enough stamps for the reward',
+  [Errors.LOYALTY_UNDO_NOT_ALLOWED]: 'Only the latest action of the card can be undone, within a few minutes',
 };

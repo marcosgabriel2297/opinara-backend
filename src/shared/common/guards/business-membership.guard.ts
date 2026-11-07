@@ -10,12 +10,14 @@ import {
   BusinessesRepository,
 } from '@shared/models/business';
 import { BusinessMemberRole, BusinessStatus } from '@shared/models/enums/business';
+import { Feature, hasFeature } from '@shared/models/enums/plan';
 import { Errors } from '../errors';
 import { Exceptions } from '../exceptions';
 import { AuthenticatedUser } from '../interfaces';
 import { Urn } from '../urn';
 
 export const BUSINESS_ROLES_KEY = 'business-roles';
+export const BUSINESS_FEATURE_KEY = 'business-feature';
 
 export interface BusinessRequest extends Request {
   user?: AuthenticatedUser;
@@ -73,6 +75,16 @@ export class BusinessMembershipGuard implements CanActivate {
     // Ya sabemos que pertenece al business: si el rol no alcanza, 403 es la respuesta correcta.
     if (roles && roles.length > 0 && !roles.includes(membership.role)) {
       return Exceptions.forbidden(Errors.BUSINESS_FORBIDDEN);
+    }
+
+    // Tambien despues de confirmar la membresia: a un miembro no hay nada que ocultarle, y el 403
+    // le dice al frontend que muestre "esto viene en otro plan" en lugar de un error.
+    const feature = this.reflector.getAllAndOverride<Feature | undefined>(BUSINESS_FEATURE_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (feature !== undefined && !hasFeature(business.plan, feature)) {
+      return Exceptions.forbidden(Errors.PLAN_FEATURE_NOT_INCLUDED);
     }
 
     request.membership = membership;

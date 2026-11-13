@@ -10,7 +10,9 @@ import {
   GoogleReviewsAdapter,
   throwAsDomainError,
 } from '@shared/integrations/google/exports';
+import { BusinessesRepository } from '@shared/models/business';
 import { LocationSource } from '@shared/models/enums/location';
+import { Feature, hasFeature } from '@shared/models/enums/plan';
 import { GoogleTokenService } from '@packages/google';
 import { Location, LocationsService } from '@packages/locations';
 
@@ -38,6 +40,7 @@ export class ReviewSyncService {
     private readonly reviewsRepository: ReviewsRepository,
     private readonly locationsService: LocationsService,
     private readonly tokenService: GoogleTokenService,
+    private readonly businessesRepository: BusinessesRepository,
     @Inject(GOOGLE_REVIEWS_ADAPTER) private readonly reviews: GoogleReviewsAdapter,
   ) {}
 
@@ -47,7 +50,7 @@ export class ReviewSyncService {
    * porque un negocio con la conexion revocada no puede frenar la sincronizacion del resto.
    */
   async syncAllLocations(options: { full?: boolean } = {}): Promise<SyncSummary> {
-    const locations = await this.locationsService.findAllActive();
+    const locations = await this.withReviewsInPlan(await this.locationsService.findAllActive());
     const summary: SyncSummary = { locations: 0, imported: 0, updated: 0, unchanged: 0, deleted: 0, failed: 0 };
     const tokens = new Map<string, string>();
 
@@ -72,6 +75,21 @@ export class ReviewSyncService {
     }
 
     return summary;
+  }
+
+  /**
+   * Solo las sucursales de negocios con reseñas en el plan: a uno de solo fidelización no se le
+   * piden reseñas a Google (la cuota es compartida por todo el proyecto).
+   */
+  private async withReviewsInPlan(locations: Location[]): Promise<Location[]> {
+    const urns = [...new Set(locations.map((location) => location.businessUrn))];
+    if (urns.length === 0) return locations;
+
+    const businesses = await this.businessesRepository.find({ urn: { $in: urns } });
+    const allowed = new Set(
+      businesses.filter((business) => hasFeature(business.plan, Feature.REVIEWS)).map((business) => business.urn),
+    );
+    return locations.filter((location) => allowed.has(location.businessUrn));
   }
 
   /**

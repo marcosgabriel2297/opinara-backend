@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { BusinessesRepository } from '@shared/models/business';
 import { BusinessStatus } from '@shared/models/enums/business';
+import { Feature, hasFeature } from '@shared/models/enums/plan';
 import { CampaignsRepository, ScanEventsRepository } from '@packages/campaigns';
 import { LocationsRepository } from '@packages/locations';
 
@@ -67,7 +68,8 @@ export class PublicCampaignsService {
     params: DTO.CampaignParams,
   ): Promise<{ businessUrn: string; campaignUrn: string; googleReviewUrl: string } | null> {
     const business = await this.businessesRepository.findBySlug(params.businessSlug);
-    if (!business || business.status !== BusinessStatus.ACTIVE) {
+    // Sin reseñas en el plan (por ejemplo, solo fidelización), sus QR no llevan a Google.
+    if (!business || business.status !== BusinessStatus.ACTIVE || !hasFeature(business.plan, Feature.REVIEWS)) {
       return null;
     }
 

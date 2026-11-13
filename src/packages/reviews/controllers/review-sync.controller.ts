@@ -1,7 +1,8 @@
 import { Controller, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
 
-import { BusinessAccess, GetBusiness } from '@shared/common/decorators';
+import { BusinessAccess, GetBusiness, RequiresFeature } from '@shared/common/decorators';
 import { Business } from '@shared/models/business';
+import { Feature } from '@shared/models/enums/plan';
 import { BusinessMemberRole } from '@shared/models/enums/business';
 import { LocationsService } from '@packages/locations';
 
@@ -15,6 +16,7 @@ import * as Services from '../services';
  * de google dependa del de reviews (que ya depende de google para los tokens).
  */
 @Controller('businesses/:businessUrn')
+@RequiresFeature(Feature.REVIEWS)
 export class ReviewSyncController {
   constructor(
     private readonly syncService: Services.Sync,

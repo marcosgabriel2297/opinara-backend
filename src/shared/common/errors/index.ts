@@ -54,6 +54,7 @@ export enum Errors {
   GOOGLE_PERMISSION_DENIED = 'GOOGLE_PERMISSION_DENIED',
   GOOGLE_RESOURCE_NOT_FOUND = 'GOOGLE_RESOURCE_NOT_FOUND',
   GOOGLE_RATE_LIMITED = 'GOOGLE_RATE_LIMITED',
+  GOOGLE_API_ACCESS_NOT_APPROVED = 'GOOGLE_API_ACCESS_NOT_APPROVED',
   GOOGLE_UNAVAILABLE = 'GOOGLE_UNAVAILABLE',
 
   // Locations / reviews
@@ -136,6 +137,7 @@ export const ErrorMessages: Record<Errors, string> = {
   [Errors.GOOGLE_PERMISSION_DENIED]: 'Google denied access to the requested resource',
   [Errors.GOOGLE_RESOURCE_NOT_FOUND]: 'The resource does not exist in Google Business Profile',
   [Errors.GOOGLE_RATE_LIMITED]: 'Google rate limit reached, try again later',
+  [Errors.GOOGLE_API_ACCESS_NOT_APPROVED]: 'Google has not enabled Business Profile API access for Opinara yet',
   [Errors.GOOGLE_UNAVAILABLE]: 'Google Business Profile is unavailable',
 
   [Errors.LOCATION_NOT_FOUND]: 'Location not found',

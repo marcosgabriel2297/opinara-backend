@@ -9,12 +9,26 @@ export class GoogleApiError extends Error {
     readonly statusCode: number | undefined,
     readonly reason: string,
     readonly operation: string,
+    /** Google informo que la cuota del proyecto es 0: el acceso a la API todavia no esta aprobado. */
+    readonly quotaIsZero = false,
   ) {
     super(`Google API error on ${operation}: ${reason}`);
     this.name = 'GoogleApiError';
   }
 
+  /**
+   * Sin el Basic API Access aprobado, Google responde 429 RESOURCE_EXHAUSTED con limite 0. No es un
+   * rate limit pasajero: no se arregla reintentando, sino cuando Google aprueba el proyecto.
+   */
+  get isAccessNotApproved(): boolean {
+    return this.statusCode === HttpStatus.TOO_MANY_REQUESTS && this.quotaIsZero;
+  }
+
   get isRetryable(): boolean {
+    if (this.isAccessNotApproved) {
+      return false;
+    }
+
     return (
       this.statusCode === HttpStatus.TOO_MANY_REQUESTS ||
       (this.statusCode !== undefined && this.statusCode >= HttpStatus.INTERNAL_SERVER_ERROR)
@@ -40,7 +54,9 @@ export const throwAsDomainError = (error: GoogleApiError): never => {
     case HttpStatus.NOT_FOUND:
       return Exceptions.notFound(Errors.GOOGLE_RESOURCE_NOT_FOUND);
     case HttpStatus.TOO_MANY_REQUESTS:
-      return Exceptions.unavailable(Errors.GOOGLE_RATE_LIMITED);
+      return Exceptions.unavailable(
+        error.isAccessNotApproved ? Errors.GOOGLE_API_ACCESS_NOT_APPROVED : Errors.GOOGLE_RATE_LIMITED,
+      );
     default:
       return Exceptions.unavailable(Errors.GOOGLE_UNAVAILABLE);
   }

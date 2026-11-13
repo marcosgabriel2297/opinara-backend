@@ -1,20 +1,31 @@
 # Puesta en marcha — piloto con el primer local
 
-> Última actualización: **2026-10-22**.
+> Última actualización: **2026-11-12**.
 > Estado del código: ver [`ESTADO.md`](ESTADO.md). Este documento es el **rollout**: el trámite con
 > Google, el deploy y el alta del primer negocio real.
 
 ## Dónde quedamos
 
-**Esperando dos cosas que no dependen de nosotros**, en este orden de importancia:
+**Basic API Access pedido el 2026-11-12.** Caso de Google **1-8095000042347**; plazo informado: 7 a 10
+días hábiles (aprox. 24 al 26 de noviembre). Datos enviados:
 
-1. **Que el dueño confirme la verificación del perfil** (bloqueante nuevo, 2026-10-22). La cuenta
-   gerente ya administra el local, pero el panel muestra *"La verificación no se ha completado"*.
-   El formulario de 0.5 exige un perfil verificado hace 60+ días y la API no expone reseñas de un
-   perfil sin verificar, así que **0.5 no se manda hasta resolver esto**. Ver *Acceso al perfil del local*.
-2. **La aprobación del Basic API Access de Google** (formulario todavía sin enviar, ver 0.5). Es lo
-   que destraba la cuota: hasta entonces la cuota del proyecto es 0 QPM y cualquier llamada real
-   responde `GOOGLE_PERMISSION_DENIED`.
+- Cuenta: la nuestra, gerente del perfil de **Acción** (ropa infantil, Tortuguitas), verificado hace
+  más de un año y con sitio web propio en la ficha.
+- Proyecto de Cloud `opinara`: número `819004417413`, ID `opinara-509000`.
+- Se eligió el perfil "Acción" (Verificado). En la misma dirección hay un **duplicado sin verificar**,
+  "ACCIÓN Ropa para bebés y chicos": no tocarlo mientras Google revisa; después, ver con el dueño si
+  se pide eliminarlo.
+
+**Cómo saber si aprobaron:** *IAM y administración → Cuotas*, filtrar *My Business*: **0** = pendiente,
+**300** = aprobado. También llega respuesta al caso por mail. Con la aprobación, seguir por la Etapa 2.
+
+**Ya resuelto el mismo día:** app de OAuth publicada (*En producción*) y marca verificada (ver Etapa 3),
+y en producción el callback vuelve al frontend ante errores y la cuota en 0 se informa como
+`GOOGLE_API_ACCESS_NOT_APPROVED` (PRs backend #4 y frontend #2).
+
+**Pendiente mientras tanto:** reconectar Google en producción si ya se había conectado (esa conexión
+se hizo en modo Prueba y vence a los 7 días). El resto de los pendientes generales está en
+`INFRAESTRUCTURA.md`, *Próximos pasos*.
 
 Nada de eso bloquea el resto: el circuito del QR no usa la API de Google y se puede poner en la
 calle antes (Etapa 1).
@@ -23,7 +34,7 @@ calle antes (Etapa 1).
 
 - [x] El local conseguido: dueño dispuesto y Place ID de la sucursal a mano. **Corrección
       (2026-11-01): Mi piace gelato no tiene sitio web propio**, requisito del formulario 0.5.
-- [ ] **Perfil para respaldar el formulario 0.5** (2026-11-01). Candidato: *Acción* (ropa infantil,
+- [x] **Perfil para respaldar el formulario 0.5** (2026-11-01). Candidato: *Acción* (ropa infantil,
       Tortuguitas): responde reseñas como propietario desde hace un año, o sea verificado hace más de
       60 días. Le falta un sitio web propio (hoy figura Instagram): hacerle una web simple en dominio
       propio, que el **dueño** la cargue en su perfil, invitar a nuestra cuenta como Gerente y recién
@@ -61,7 +72,7 @@ calle antes (Etapa 1).
       ```
       Tienen que coincidir carácter por carácter con `GOOGLE_REDIRECT_URI`. El client ID y el secret
       van a `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
-- [ ] **0.5 Formulario de Basic API Access** — developers.google.com/my-business/content/prereqs,
+- [x] **0.5 Formulario de Basic API Access** (enviado el 2026-11-12, caso 1-8095000042347) — developers.google.com/my-business/content/prereqs,
       opción *Application for Basic API Access*. Pide el **ID del proyecto** de Cloud, el nombre y
       sitio del negocio, y el uso que se le va a dar. Describir lo que la app hace de verdad:
       sincronizar las reseñas del perfil y responderlas desde un panel propio. **No mencionar generar
@@ -189,11 +200,16 @@ punta**: escaneo, opinión interna y salto al formulario de reseña del local co
 
 ### Etapa 3 — Dejar de ser piloto
 
-- [ ] Publicar la app y pasar la verificación de la pantalla de consentimiento. Mientras siga en
-      Testing, **el refresh token se vence cada 7 días** (se ve como `GOOGLE_CONNECTION_REVOKED`).
-      Google pide: dominio verificado en Search Console, home page pública que explique la app,
-      política de privacidad en el dominio y un video del flujo de OAuth completo. Tarda semanas:
-      empezarlo apenas aprueben la API, no cuando haya un segundo cliente esperando.
+- [x] **App de OAuth publicada** (2026-11-12): estado *En producción*, usuarios externos. La consola
+      clasifica `business.manage` como **permiso no sensible**, así que no hace falta la revisión con
+      video ni hay límite de 100 usuarios, y el refresh token ya no vence a los 7 días.
+      Las conexiones hechas antes de publicar se crearon en modo Prueba: **reconectar Google una vez**.
+- [x] Correo de asistencia al usuario: `opinara.soporte@gmail.com` (2026-11-12). Esa cuenta es **Editor**
+      del proyecto, no Propietario: la invitación como Propietario de una cuenta Gmail quedaba en un
+      bucle al aceptarla. Tiene verificación en 2 pasos (Google Cloud la exige desde el 2026-11-11).
+- [x] **Marca verificada y publicada** (2026-11-12): Google la verificó en minutos. La pantalla de
+      consentimiento muestra "Opinara", el correo de soporte y los links a privacidad y términos.
+      **Subir un logo o cambiar nombre, dominio o links pide verificarla de nuevo.**
 
 ## Síntomas y qué significan
 
@@ -201,10 +217,10 @@ punta**: escaneo, opinión interna y salto al formulario de reseña del local co
 |---|---|
 | La *Google My Business API* no aparece en la biblioteca | normal: se hace visible recién con el Basic API Access aprobado |
 | `redirect_uri_mismatch` al conectar | `GOOGLE_REDIRECT_URI` no es idéntico al de la consola |
-| "Acceso bloqueado" en la pantalla de Google | la cuenta que autoriza no está en *Usuarios de prueba* |
+| "Acceso bloqueado" en la pantalla de Google | la app volvió a modo Prueba y la cuenta no está en *Usuarios de prueba* |
 | `GOOGLE_RATE_LIMITED` ("Google está limitando los pedidos") al listar cuentas, recién conectado | todavía sin aprobación: con cuota 0 Google responde **429** `RESOURCE_EXHAUSTED`, no 403. Comprobado el 2026-11-01 |
 | `GOOGLE_PERMISSION_DENIED` | le sacaron el acceso al perfil a nuestra cuenta, o la API no está habilitada en el proyecto |
 | `GOOGLE_MISSING_REFRESH_TOKEN` | esa cuenta ya había autorizado antes: revocar en su cuenta de Google y reconectar |
-| `GOOGLE_CONNECTION_REVOKED` a los 7 días | la app sigue en Testing → Etapa 3 |
+| `GOOGLE_CONNECTION_REVOKED` a los 7 días | la conexión se hizo con la app en Testing (antes del 2026-11-12): reconectar |
 | `LOCATION_NOT_SYNCABLE` | la sucursal es manual y todavía no se importó de Google |
 | `GOOGLE_RATE_LIMITED` con la API ya aprobada | 300 QPM por proyecto, compartidos entre todos los negocios |

@@ -23,6 +23,7 @@ const COLLECTIONS = [
   'loyalty_members',
   'loyalty_events',
   'admin_audit_events',
+  'campaigns',
 ];
 
 const tokenFromMail = (text: string | undefined): string => /#token=([A-Za-z0-9_-]+)/.exec(text ?? '')?.[1] ?? '';
@@ -131,7 +132,7 @@ describe('Fidelizacion: tarjeta de sellos (integracion)', () => {
     it('el negocio expone su plan y lo que incluye', async () => {
       const { body } = await http().get(`/api/businesses/${business.urn}`).set('Authorization', owner.auth).expect(200);
 
-      expect(body).toMatchObject({ plan: 'REVIEWS_LOYALTY', features: ['LOYALTY'] });
+      expect(body).toMatchObject({ plan: 'REVIEWS_LOYALTY', features: ['REVIEWS', 'LOYALTY'] });
     });
 
     it('un negocio sin el plan recibe PLAN_FEATURE_NOT_INCLUDED y su alta publica no existe', async () => {
@@ -148,8 +149,47 @@ describe('Fidelizacion: tarjeta de sellos (integracion)', () => {
       await connection.collection('businesses').updateOne({ urn: business.urn }, { $unset: { plan: '' } });
 
       const { body } = await http().get(`/api/businesses/${business.urn}`).set('Authorization', owner.auth).expect(200);
-      expect(body).toMatchObject({ plan: 'REVIEWS', features: [] });
+      expect(body).toMatchObject({ plan: 'REVIEWS', features: ['REVIEWS'] });
       await http().get(`${base()}/programs`).set('Authorization', owner.auth).expect(403);
+    });
+
+    it('con solo fidelizacion: la tarjeta anda, las reseñas y las campañas no, y el QR no lleva a Google', async () => {
+      await setPlan('LOYALTY');
+      await connection
+        .collection('locations')
+        .updateOne(
+          { urn: CENTRO },
+          { $set: { newReviewUri: 'https://search.google.com/local/writereview?placeid=x' } },
+        );
+      await connection.collection('campaigns').insertOne({
+        urn: 'urn:campaign:mostrador',
+        businessUrn: business.urn,
+        locationUrn: CENTRO,
+        name: 'Mostrador',
+        slug: 'mostrador',
+        status: 'ACTIVE',
+        stats: { scans: 0, googleClicks: 0 },
+        createdByUserUrn: owner.urn,
+      });
+
+      const { body } = await http().get(`/api/businesses/${business.urn}`).set('Authorization', owner.auth).expect(200);
+      expect(body).toMatchObject({ plan: 'LOYALTY', features: ['LOYALTY'] });
+
+      await createProgram();
+      for (const path of ['reviews', 'campaigns', 'scans', `locations/${CENTRO}/reviews`]) {
+        const response = await http().get(`/api/businesses/${business.urn}/${path}`).set('Authorization', owner.auth);
+        expect({ path, status: response.status, code: response.body.errorCode }).toEqual({
+          path,
+          status: 403,
+          code: 'PLAN_FEATURE_NOT_INCLUDED',
+        });
+      }
+      // Las sucursales siguen: la tarjeta de sellos es por sucursal.
+      await http().get(`/api/businesses/${business.urn}/locations`).set('Authorization', owner.auth).expect(200);
+
+      const scan = await http().get(`/api/public/r/${business.slug}/mostrador`).expect(302);
+      expect(scan.headers.location).toMatch(/\/r\/no-disponible$/);
+      expect((await connection.collection('campaigns').findOne({ slug: 'mostrador' }))?.stats.scans).toBe(0);
     });
 
     it('a quien no es miembro le responde 404, no 403', async () => {

@@ -1,14 +1,16 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 
-import { BusinessAccess, GetBusiness } from '@shared/common/decorators';
+import { BusinessAccess, GetBusiness, RequiresFeature } from '@shared/common/decorators';
 import { Business } from '@shared/models/business';
+import { Feature } from '@shared/models/enums/plan';
 
 import config from '../config';
 import * as DTO from '../dtos';
 import * as Services from '../services';
 
 @Controller('businesses/:businessUrn/locations/:locationUrn/reviews')
+@RequiresFeature(Feature.REVIEWS)
 export class ReviewsController {
   constructor(private readonly service: Services.Reviews) {}
 
@@ -71,6 +73,7 @@ export class ReviewsController {
 
 /** Las reseñas de todas las sucursales del negocio: la fila de respuesta y el resumen de "Hoy". */
 @Controller('businesses/:businessUrn/reviews')
+@RequiresFeature(Feature.REVIEWS)
 export class BusinessReviewsController {
   constructor(private readonly service: Services.Reviews) {}
 

@@ -280,14 +280,19 @@ Es la primera vez que Opinara guarda datos de **consumidores finales**, no solo 
 
 ## Planes
 
-*Decidido el 2026-11-06:* tres planes. El de entrada tiene solo reseñas y el del medio suma
-fidelización. El tercero está por definir (abajo hay una propuesta).
+*Decidido el 2026-11-06:* el comercio puede tener reseñas, fidelización o las dos cosas. Más
+adelante, un plan más alto (por definir).
 
-| Plan          | Incluye                                   |
-| ------------- | ----------------------------------------- |
-| **Reseñas**   | QR a Google, gestión y respuestas de reseñas |
-| **Reseñas + Fidelización** | Lo anterior y la tarjeta de sellos por sucursal |
-| **Tercero**   | Por definir                               |
+| Plan (`BusinessPlan`)        | Funcionalidades (`Feature`) | Incluye                                       |
+| ---------------------------- | --------------------------- | --------------------------------------------- |
+| **Reseñas** (`REVIEWS`)      | `REVIEWS`                   | QR a Google, gestión y respuestas de reseñas  |
+| **Fidelización** (`LOYALTY`) | `LOYALTY`                   | Solo la tarjeta de sellos por sucursal        |
+| **Reseñas + Fidelización** (`REVIEWS_LOYALTY`) | `REVIEWS`, `LOYALTY` | Las dos cosas                      |
+
+**`REVIEWS`** corta las reseñas (lista, detalle, respuestas, sugerencias), su sincronización (el
+endpoint y el cron, que no le pide nada a Google por un negocio sin reseñas) y las campañas de QR. El
+QR de reseñas de un negocio sin `REVIEWS` lleva a "no disponible". Lo tienen todos los planes: el
+equipo, las sucursales, la conexión con Google (sirve también para importar sucursales) y el logo.
 
 **Lo mínimo que necesita esta funcionalidad**, antes de tener cobro (punto 9 de
 `FUTURAS-FUNCIONALIDADES.md`):

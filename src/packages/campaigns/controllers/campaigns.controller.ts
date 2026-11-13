@@ -1,14 +1,16 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 
-import { BusinessAccess, GetBusiness, GetUser } from '@shared/common/decorators';
+import { BusinessAccess, GetBusiness, GetUser, RequiresFeature } from '@shared/common/decorators';
 import { AuthenticatedUser } from '@shared/common/interfaces';
 import { Business } from '@shared/models/business';
+import { Feature } from '@shared/models/enums/plan';
 import { BusinessMemberRole } from '@shared/models/enums/business';
 
 import * as DTO from '../dtos';
 import * as Services from '../services';
 
 @Controller('businesses/:businessUrn/campaigns')
+@RequiresFeature(Feature.REVIEWS)
 export class CampaignsController {
   constructor(private readonly service: Services.Campaigns) {}
 
@@ -49,6 +51,7 @@ export class CampaignsController {
 
 /** Los escaneos de todas las campañas del negocio, por semana. */
 @Controller('businesses/:businessUrn/scans')
+@RequiresFeature(Feature.REVIEWS)
 export class BusinessScansController {
   constructor(private readonly service: Services.Campaigns) {}
 

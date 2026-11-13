@@ -8,20 +8,28 @@
 export enum BusinessPlan {
   /** QR a Google, gestión y respuestas de reseñas. */
   REVIEWS = 'REVIEWS',
-  /** Lo anterior más la tarjeta de sellos por sucursal. */
+  /** Solo la tarjeta de sellos por sucursal. */
+  LOYALTY = 'LOYALTY',
+  /** Las dos cosas. */
   REVIEWS_LOYALTY = 'REVIEWS_LOYALTY',
 }
 
-/** Funcionalidades que dependen del plan. Lo que no está acá lo tienen todos los planes. */
+/**
+ * Funcionalidades que dependen del plan. Lo que no está acá lo tienen todos los planes: el equipo,
+ * las sucursales, la conexión con Google (sirve también para importar sucursales) y el logo.
+ */
 export enum Feature {
+  /** Reseñas, sus respuestas y sugerencias, su sincronización y las campañas de QR a Google. */
+  REVIEWS = 'REVIEWS',
   LOYALTY = 'LOYALTY',
 }
 
 export const DEFAULT_BUSINESS_PLAN = BusinessPlan.REVIEWS;
 
 export const PLAN_FEATURES: Record<BusinessPlan, readonly Feature[]> = {
-  [BusinessPlan.REVIEWS]: [],
-  [BusinessPlan.REVIEWS_LOYALTY]: [Feature.LOYALTY],
+  [BusinessPlan.REVIEWS]: [Feature.REVIEWS],
+  [BusinessPlan.LOYALTY]: [Feature.LOYALTY],
+  [BusinessPlan.REVIEWS_LOYALTY]: [Feature.REVIEWS, Feature.LOYALTY],
 };
 
 /** Los negocios creados antes de que existieran los planes no tienen `plan`: cuentan como el de entrada. */

@@ -9,6 +9,7 @@ import {
   GOOGLE_LOCATIONS_ADAPTER,
   GOOGLE_OAUTH_ADAPTER,
   GoogleApiError,
+  GoogleConfig,
 } from '@shared/integrations/google/exports';
 import { createTestApp } from '../../../test/app.factory';
 import {
@@ -289,6 +290,85 @@ describe('Google (integracion)', () => {
     });
   });
 
+  describe('callback con URLs del frontend configuradas', () => {
+    const SUCCESS_URL = 'https://app.test/settings/google/connected';
+    const ERROR_URL = 'https://app.test/settings/google/connected';
+    let original: { success: string; error: string };
+
+    beforeAll(() => {
+      original = { success: GoogleConfig.OAuth.SuccessUrl, error: GoogleConfig.OAuth.ErrorUrl };
+      GoogleConfig.OAuth.SuccessUrl = SUCCESS_URL;
+      GoogleConfig.OAuth.ErrorUrl = ERROR_URL;
+    });
+
+    afterAll(() => {
+      GoogleConfig.OAuth.SuccessUrl = original.success;
+      GoogleConfig.OAuth.ErrorUrl = original.error;
+    });
+
+    const expectRedirectWithError = (location: string | undefined, errorCode: string) => {
+      const url = new URL(location ?? '');
+      expect(`${url.origin}${url.pathname}`).toBe(ERROR_URL);
+      expect(url.searchParams.get('error')).toBe(errorCode);
+    };
+
+    it('redirige al frontend cuando la conexion sale bien', async () => {
+      const { body } = await connect().expect(201);
+
+      const response = await callback({ code: 'codigo-valido', state: stateFromUrl(body.authorizationUrl) }).expect(
+        302,
+      );
+
+      expect(response.headers.location).toBe(SUCCESS_URL);
+    });
+
+    it.each([
+      ['un state inventado', { code: 'codigo-valido', state: 'state-inventado' }, 'GOOGLE_INVALID_OAUTH_STATE'],
+      ['falta el code', { state: 'algo' }, 'GOOGLE_INVALID_OAUTH_STATE'],
+      ['un parametro que Google agregue mañana', { code: 'c', state: 's', nuevo: 'x' }, 'GOOGLE_INVALID_OAUTH_STATE'],
+      ['el usuario cancela', { error: 'access_denied' }, 'GOOGLE_PERMISSION_DENIED'],
+    ])('con %s vuelve al frontend con el codigo, nunca con JSON', async (_caso, query, errorCode) => {
+      const response = await callback(query as Record<string, string>).expect(302);
+
+      expectRedirectWithError(response.headers.location, errorCode);
+      expect(response.headers['content-type'] ?? '').not.toContain('application/json');
+    });
+
+    it('vuelve al frontend si Google no manda refresh token', async () => {
+      oauth.omitRefreshToken = true;
+      const { body } = await connect().expect(201);
+
+      const response = await callback({ code: 'codigo-valido', state: stateFromUrl(body.authorizationUrl) }).expect(
+        302,
+      );
+
+      expectRedirectWithError(response.headers.location, 'GOOGLE_MISSING_REFRESH_TOKEN');
+    });
+
+    it('vuelve al frontend con credenciales mal configuradas, sin filtrar el detalle de Google', async () => {
+      oauth.exchangeError = new GoogleApiError(401, 'invalid_client', 'oauth.exchangeCode');
+      const { body } = await connect().expect(201);
+
+      const response = await callback({ code: 'codigo-valido', state: stateFromUrl(body.authorizationUrl) }).expect(
+        302,
+      );
+
+      expectRedirectWithError(response.headers.location, 'GOOGLE_OAUTH_EXCHANGE_FAILED');
+      expect(response.headers.location).not.toContain('invalid_client');
+    });
+
+    it('vuelve al frontend si Google esta caido durante el intercambio', async () => {
+      oauth.exchangeError = new GoogleApiError(503, 'UNAVAILABLE', 'oauth.exchangeCode');
+      const { body } = await connect().expect(201);
+
+      const response = await callback({ code: 'codigo-valido', state: stateFromUrl(body.authorizationUrl) }).expect(
+        302,
+      );
+
+      expectRedirectWithError(response.headers.location, 'GOOGLE_UNAVAILABLE');
+    });
+  });
+
   describe('estado y desconexion', () => {
     it('expone el estado de la conexion sin ningun token', async () => {
       await establishConnection();
@@ -450,6 +530,19 @@ describe('Google (integracion)', () => {
         .expect(503);
 
       expect(response.body.errorCode).toBe('GOOGLE_RATE_LIMITED');
+      expect(JSON.stringify(response.body)).not.toContain('RESOURCE_EXHAUSTED');
+    });
+
+    it('distingue la cuota en 0 (API sin aprobar) de un rate limit pasajero', async () => {
+      await establishConnection();
+      accounts.error = new GoogleApiError(429, 'RESOURCE_EXHAUSTED', 'accounts.list', true);
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/businesses/${business.urn}/google/accounts`)
+        .set('Authorization', owner.auth)
+        .expect(503);
+
+      expect(response.body.errorCode).toBe('GOOGLE_API_ACCESS_NOT_APPROVED');
       expect(JSON.stringify(response.body)).not.toContain('RESOURCE_EXHAUSTED');
     });
   });

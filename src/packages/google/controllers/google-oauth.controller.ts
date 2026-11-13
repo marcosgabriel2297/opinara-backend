@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Res } from '@nestjs/common';
+import { Controller, Get, Query, Res, UseFilters } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Response } from 'express';
 
@@ -9,6 +9,7 @@ import { GoogleConfig } from '@shared/integrations/google/exports';
 import config from '../config';
 import * as DTO from '../dtos';
 import * as Services from '../services';
+import { GoogleOAuthCallbackFilter } from './google-oauth-callback.filter';
 
 const CALLBACK_THROTTLE = { default: { limit: config.Throttle.Limit, ttl: config.Throttle.Ttl } };
 
@@ -22,6 +23,8 @@ export class GoogleOAuthController {
 
   @Get('/callback')
   @Throttle(CALLBACK_THROTTLE)
+  // Cualquier error vuelve al frontend con `?error=CODIGO` en vez de dejar al dueño en un JSON.
+  @UseFilters(GoogleOAuthCallbackFilter)
   async callback(@Query() query: DTO.OAuthCallback, @Res({ passthrough: true }) response: Response) {
     // El usuario cancelo el consentimiento en la pantalla de Google.
     if (query.error) {

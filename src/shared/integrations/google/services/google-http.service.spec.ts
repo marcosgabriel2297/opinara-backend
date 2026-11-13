@@ -46,6 +46,62 @@ describe('GoogleHttpService', () => {
     expect(get).toHaveBeenCalledTimes(3);
   });
 
+  it('no reintenta la cuota en 0: la API todavia no esta aprobada', async () => {
+    const get = jest.fn().mockRejectedValue(
+      axiosErrorWith(429, {
+        error: {
+          status: 'RESOURCE_EXHAUSTED',
+          message: "Quota exceeded for quota metric 'Requests' and limit 'Requests per minute'",
+          details: [
+            {
+              '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+              reason: 'RATE_LIMIT_EXCEEDED',
+              metadata: { quota_limit_value: '0', service: 'mybusinessaccountmanagement.googleapis.com' },
+            },
+          ],
+        },
+      }),
+    );
+
+    const error = await buildService(get)
+      .get('accounts.list', 'https://api.test/accounts', 'token')
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(GoogleApiError);
+    expect((error as GoogleApiError).isAccessNotApproved).toBe(true);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('reconoce la cuota en 0 tambien por el texto del mensaje', async () => {
+    const get = jest
+      .fn()
+      .mockRejectedValue(
+        axiosErrorWith(429, { error: { status: 'RESOURCE_EXHAUSTED', message: 'Quota exceeded ... with value 0.' } }),
+      );
+
+    const error = await buildService(get)
+      .get('accounts.list', 'https://api.test/accounts', 'token')
+      .catch((caught: unknown) => caught);
+
+    expect((error as GoogleApiError).isAccessNotApproved).toBe(true);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('un 429 con cuota real sigue siendo un rate limit que se reintenta', async () => {
+    const get = jest.fn().mockRejectedValue(
+      axiosErrorWith(429, {
+        error: { status: 'RESOURCE_EXHAUSTED', details: [{ metadata: { quota_limit_value: '300' } }] },
+      }),
+    );
+
+    const error = await buildService(get)
+      .get('accounts.list', 'https://api.test/accounts', 'token')
+      .catch((caught: unknown) => caught);
+
+    expect((error as GoogleApiError).isAccessNotApproved).toBe(false);
+    expect(get).toHaveBeenCalledTimes(4);
+  });
+
   it('no reintenta errores del cliente: un 404 falla en el primer intento', async () => {
     const get = jest.fn().mockRejectedValue(axiosErrorWith(404, { error: { status: 'NOT_FOUND' } }));
 

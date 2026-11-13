@@ -5,10 +5,31 @@ import { HttpClientService, QueryValue } from '@shared/common/client';
 import config from '../config';
 import { GoogleApiError } from '../errors';
 
+interface GoogleErrorDetail {
+  metadata?: { quota_limit_value?: string };
+}
+
 interface GoogleErrorBody {
-  error?: { message?: string; status?: string } | string;
+  error?: { message?: string; status?: string; details?: GoogleErrorDetail[] } | string;
   error_description?: string;
 }
+
+/**
+ * Detecta la cuota en cero (proyecto sin el Basic API Access aprobado). Google lo informa en
+ * `details[].metadata.quota_limit_value`; el texto del mensaje queda como respaldo.
+ */
+const hasZeroQuota = (body: GoogleErrorBody | undefined): boolean => {
+  if (typeof body?.error !== 'object' || body.error === null) {
+    return false;
+  }
+
+  const details = Array.isArray(body.error.details) ? body.error.details : [];
+  if (details.some((detail) => detail?.metadata?.quota_limit_value === '0')) {
+    return true;
+  }
+
+  return /\bvalue 0\b/.test(body.error.message ?? '');
+};
 
 /**
  * Cliente HTTP para las APIs de Google: agrega el bearer, normaliza errores y reintenta
@@ -75,7 +96,8 @@ export class GoogleHttpService {
         (typeof body?.error === 'object' ? body.error?.status || body.error?.message : body?.error) ??
         axiosError.message;
 
-      return new GoogleApiError(axiosError.response?.status, reason, operation);
+      // Solo se extrae el dato que hace falta: el cuerpo crudo no se guarda.
+      return new GoogleApiError(axiosError.response?.status, reason, operation, hasZeroQuota(body));
     }
 
     return new GoogleApiError(undefined, error instanceof Error ? error.message : 'unknown error', operation);

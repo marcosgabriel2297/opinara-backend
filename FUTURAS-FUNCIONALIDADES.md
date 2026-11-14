@@ -6,6 +6,8 @@ Lo que queda propuesto para Opinara, ordenado por impacto. Nada de esto está em
 >
 > **Condición para casi todo:** lo que depende de datos reales de Google (avisos, temas, tiempo de respuesta) recién anda en producción cuando Google apruebe el acceso a la API de Business Profile. Mientras tanto se puede construir y probar contra los mocks del frontend y los fakes de los tests.
 
+La propuesta del tercer plan (Pro) y otras ideas nuevas (tarjeta en Wallet, caja con PIN, referidos, competencia) están en [`PLAN-PRO.md`](PLAN-PRO.md).
+
 Ya hecho (octubre 2026), fuera de esta lista: límite del QR por IP y campaña con página de espera, sesiones revocables (cerrar sesión de verdad y en todos los dispositivos), recuperar contraseña e invitar miembros con roles.
 
 ---

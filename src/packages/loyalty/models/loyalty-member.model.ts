@@ -39,6 +39,27 @@ class EncryptedCardToken implements EncryptedValue {
 
 const EncryptedCardTokenSchema = SchemaFactory.createForClass(EncryptedCardToken);
 
+export enum RemindersOptOutBy {
+  /** Lo apago el cliente desde su tarjeta: solo el lo puede volver a prender. */
+  CLIENT = 'CLIENT',
+  /** Lo apago el local porque el cliente se lo pidio (por ejemplo, respondiendo el WhatsApp). */
+  BUSINESS = 'BUSINESS',
+}
+
+@Schema({ _id: false })
+export class RemindersOptOut {
+  @Prop({ required: true })
+  at!: Date;
+
+  @Prop({ required: true, enum: RemindersOptOutBy })
+  by!: RemindersOptOutBy;
+
+  @Prop({ required: false })
+  byUserUrn?: string;
+}
+
+const RemindersOptOutSchema = SchemaFactory.createForClass(RemindersOptOut);
+
 /**
  * Un cliente del comercio y su tarjeta de sellos en un programa (una sucursal).
  *
@@ -94,6 +115,20 @@ export class LoyaltyMember implements Entity {
 
   @Prop({ required: false, type: Date, default: null })
   lastStampAt?: Date | null;
+
+  /**
+   * Cuando el local abrio WhatsApp para mandarle un recordatorio. Es lo mas que se sabe: con `wa.me`
+   * no hay forma de confirmar que el mensaje se envio. Se le recomienda uno por vez que suma un sello.
+   */
+  @Prop({ required: false, type: Date, default: null })
+  lastReminderAt?: Date | null;
+
+  @Prop({ required: false })
+  lastReminderByUserUrn?: string;
+
+  /** No quiere recibir recordatorios por WhatsApp. Sin valor, se le pueden mandar. */
+  @Prop({ type: RemindersOptOutSchema, required: false, default: null })
+  remindersOptOut?: RemindersOptOut | null;
 
   @Prop({ type: LoyaltyConsentSchema, required: true })
   consent!: LoyaltyConsent;

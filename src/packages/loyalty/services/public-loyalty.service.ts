@@ -12,7 +12,13 @@ import { LocationsRepository } from '@packages/locations';
 
 import config from '../config';
 import * as DTO from '../dtos';
-import { LOYALTY_MEMBER_ENTITY, LoyaltyMember, LoyaltyMembersRepository, LoyaltyProgramsRepository } from '../models';
+import {
+  LOYALTY_MEMBER_ENTITY,
+  LoyaltyMember,
+  LoyaltyMembersRepository,
+  LoyaltyProgramsRepository,
+  RemindersOptOutBy,
+} from '../models';
 import { CARD_TOKEN_PATTERN, generateCardToken, generateMemberCode, hashCardToken, normalizePhone } from '../utils';
 import { LoyaltyCardMailer } from './loyalty-card-mailer.service';
 import { OwnedProgram, isOperable, renderQr } from './loyalty-programs.service';
@@ -47,6 +53,8 @@ export interface PublicLoyaltyCard {
     stamps: number;
     rewardAvailable: boolean;
     totalRedemptions: number;
+    /** Si acepta los recordatorios del local por WhatsApp. Los puede apagar desde la tarjeta. */
+    remindersEnabled: boolean;
     createdAt?: Date;
   };
 }
@@ -135,6 +143,7 @@ export class PublicLoyaltyService {
           totalStamps: 0,
           totalRedemptions: 0,
           lastStampAt: null,
+          remindersOptOut: null,
           consent: { acceptedAt: new Date(), termsVersion: config.TermsVersion, marketing: payload.marketing === true },
         });
 
@@ -186,6 +195,7 @@ export class PublicLoyaltyService {
         stamps: member.stamps,
         rewardAvailable: member.stamps >= program.stampsRequired,
         totalRedemptions: member.totalRedemptions,
+        remindersEnabled: !member.remindersOptOut,
         createdAt: member.createdAt,
       },
     };
@@ -206,6 +216,21 @@ export class PublicLoyaltyService {
     if (member) {
       await this.cardMailer.send('link', { ...resolved, member });
     }
+  }
+
+  /**
+   * El cliente apaga (o vuelve a prender) los recordatorios por WhatsApp desde su tarjeta. Si los
+   * apaga el, el local no los puede volver a prender.
+   */
+  async setReminders(token: string | undefined, { enabled }: DTO.SetReminders): Promise<{ remindersEnabled: boolean }> {
+    const member = await this.memberByToken(token);
+    const optOut = enabled ? null : { at: new Date(), by: RemindersOptOutBy.CLIENT };
+
+    const updated = await this.membersRepository.setRemindersOptOut(member.businessUrn, member.urn, optOut);
+    if (!updated) {
+      return Exceptions.notFound(Errors.LOYALTY_CARD_NOT_FOUND);
+    }
+    return { remindersEnabled: !updated.remindersOptOut };
   }
 
   /** El cliente borra sus datos desde la tarjeta. Los eventos quedan, sin datos personales. */

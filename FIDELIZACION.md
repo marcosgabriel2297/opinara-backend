@@ -86,10 +86,64 @@ Una pantalla del frontend pensada para usarse cien veces por día: `/loyalty/reg
 2. Ve el nombre, los sellos y si tiene un premio disponible. Si la tarjeta es **de otra sucursal**,
    lo ve claro ("Esta tarjeta es de Sucursal Norte") y no puede sumar: `LOYALTY_WRONG_LOCATION`.
 3. **"Sumar sello"** → `POST …/loyalty/programs/{programUrn}/members/{memberCode}/stamps`. Si llega
-   a N, la pantalla lo muestra grande: "¡Tiene un premio!".
+   a N, la pantalla lo muestra grande: "¡Tiene un premio!". Mientras corre el tiempo mínimo entre
+   sellos, el botón queda bloqueado y la caja muestra "Próximo sello desde las 14:35 · Faltan 9:42"
+   con el `nextStampAt` que devuelve el backend en cada tarjeta (`lastStampAt` +
+   `stampCooldownMinutes`; `null` si no tiene sellos o se deshizo el último).
 4. **"Canjear premio"** → `POST …/loyalty/programs/{programUrn}/members/{memberCode}/redemptions`.
    Descuenta N sellos (lo que sobre queda acumulado).
 5. **"Deshacer"**, disponible unos minutos después de cada acción, para errores de dedo.
+6. **"Quitar sellos"** (solo ADMIN: ni el OWNER ni el MEMBER), para corregir sellos mal puestos cuando ya no se puede
+   deshacer → `POST …/members/{memberCode}/stamp-removals` `{ stamps }`. Baja `stamps` y
+   `totalStamps` (es una corrección: esos sellos no existieron), queda en el historial como
+   `STAMP_REMOVAL` y se puede deshacer, pero solo un ADMIN. Anda con el programa pausado.
+
+### Recordatorios por WhatsApp
+
+OWNER y ADMIN ven en **Tarjeta de sellos → Recordatorios** (`/loyalty/reminders`) a quién conviene
+recordarle que vuelva, y se lo mandan **desde el WhatsApp del local** con un link `wa.me` (sin la
+API de WhatsApp Business: no cuesta ni pide aprobación de Meta). Hay dos motivos (`reason`):
+
+- **Cerca del premio** (`NEAR_REWARD`): le faltan 1 o 2 sellos (`config.Reminders.MaxMissingStamps`),
+  tiene al menos uno y su último sello fue **antes de hoy** en la zona horaria del negocio (al que
+  está en la caja no se le escribe: se le manda al día siguiente).
+- **No viene hace un tiempo** (`INACTIVE`): le faltan más sellos, o tiene 0, y su última visita (el
+  último sello o, si nunca estrenó la tarjeta, el alta) fue hace `inactiveDays` días o más. Cada
+  sucursal lo elige (7 a 365; **20 por defecto**).
+
+Si cumple los dos, gana "cerca del premio": nunca le llegan dos. En los dos casos, **uno por
+vuelta**: no se le recomienda otro hasta que vuelva a sumar un sello. Solo de sucursales activas.
+Cada motivo tiene su plantilla (`reminderMessage` e `inactiveReminderMessage`), con su recomendada.
+
+No pide el permiso de promociones (`consent.marketing`): es un aviso sobre la tarjeta que el
+cliente sacó, y lo manda el local desde su WhatsApp. Está en las condiciones del alta desde
+`TermsVersion` `2026-11-13` ("{negocio} puede escribirte por WhatsApp para avisarte de tu
+tarjeta…").
+
+**No recibir más** (`remindersOptOut: { at, by, byUserUrn? }`): un cliente con baja no aparece en
+la lista y no se le puede marcar uno enviado (`LOYALTY_REMINDERS_OPTED_OUT`).
+
+- **El cliente** los apaga o prende desde su tarjeta ("Avisos por WhatsApp") →
+  `PUT /public/loyalty/card/reminders` `{ enabled }`. Si los apaga él (`by: CLIENT`), el local
+  **no** los puede volver a prender: solo él.
+- **El local** (OWNER, ADMIN) lo saca cuando el cliente se lo pide, por ejemplo respondiendo el
+  WhatsApp: "No quiere recibir más" en Recordatorios, o la campanita en la lista de clientes →
+  `PUT /businesses/:b/loyalty/members/:memberCode/reminders` `{ enabled }` (`by: BUSINESS`; esa sí la
+  puede revertir).
+
+El mensaje sale de la plantilla de cada sucursal (`reminderMessage`, editable en el detalle de la
+tarjeta) con `{nombre}`, `{faltan}`, `{sellos}` («2 de 5 sellos»), `{premio}`, `{negocio}` y `{sucursal}`. Sin plantilla propia se
+usa la recomendada (`config.Reminders.DefaultMessage`), así les llegan las mejoras. El link de la
+tarjeta **no es una variable**: el backend lo agrega siempre al final. Al tocar "Enviar por
+WhatsApp" se anota `lastReminderAt`: con `wa.me` no se puede saber si de verdad se envió, solo que
+se abrió WhatsApp.
+
+| Endpoint | Quién |
+| --- | --- |
+| `GET /businesses/:b/loyalty/reminders?programUrn=&reason=&page=&limit=` | OWNER, ADMIN: `{ member, program, reason, missingStamps, daysSinceVisit, message }` |
+| `POST /businesses/:b/loyalty/reminders/:memberCode/sent` | OWNER, ADMIN (204) |
+| `PUT  /businesses/:b/loyalty/members/:memberCode/reminders` `{ enabled }` | OWNER, ADMIN |
+| `PUT  /public/loyalty/card/reminders` `{ enabled }` | el cliente, con el token de su tarjeta |
 
 Cualquier miembro del comercio (OWNER, ADMIN o MEMBER) puede sumar y canjear. Configurar el
 programa y ver o exportar la lista de clientes queda para OWNER y ADMIN.
@@ -136,7 +190,7 @@ advierte antes de guardar.
 `cardTokenHash` único.
 
 **`LoyaltyEvent`** (`loyalty_events`), el historial (para auditar, deshacer y graficar):
-`{ urn, businessUrn, programUrn, locationUrn, memberUrn, type: STAMP | REDEMPTION, amount,
+`{ urn, businessUrn, programUrn, locationUrn, memberUrn, type: STAMP | REDEMPTION | STAMP_REMOVAL, amount,
 byUserUrn, createdAt, undoneAt? }`. `locationUrn` se copia del programa para agregar por sucursal
 sin hacer joins. Índices `{ businessUrn, programUrn, createdAt: -1 }` y
 `{ businessUrn, memberUrn, createdAt: -1 }`.
@@ -189,7 +243,8 @@ Con `P = /businesses/:b/loyalty/programs/:programUrn`:
 | `GET  /businesses/:b/loyalty/members/:memberCode`      | todos. A nivel negocio a propósito: al escanear se sabe de qué programa es la tarjeta |
 | `POST P/members/:memberCode/stamps`                    | todos          |
 | `POST P/members/:memberCode/redemptions`               | todos          |
-| `POST /businesses/:b/loyalty/events/:eventUrn/undo`    | todos          |
+| `POST P/members/:memberCode/stamp-removals` `{ stamps }` | solo ADMIN (si no alcanzan, `LOYALTY_REMOVE_EXCEEDS_STAMPS`) |
+| `POST /businesses/:b/loyalty/events/:eventUrn/undo`    | todos; deshacer un `STAMP_REMOVAL`, solo ADMIN (`FORBIDDEN`) |
 | `GET  /businesses/:b/loyalty/members/:memberCode/card-link` | todos: el link **actual**, sin cambiarlo (`{ cardUrl, pngDataUrl }`), para mandarlo por WhatsApp o mostrarlo como QR |
 | `POST /businesses/:b/loyalty/members/:memberCode/card-link` | todos: genera un token nuevo (invalida el anterior) y devuelve `{ cardUrl, pngDataUrl }` para mostrarlo como QR en la caja. Es la recuperación cuando no hay email |
 | `POST P/qr`                                            | OWNER, ADMIN: `{ targetUrl, pngDataUrl }` del QR de alta, para imprimir (como el de campañas) |
@@ -204,7 +259,9 @@ negocio incluya fidelización (ver "Planes").
 
 `LOYALTY_PROGRAM_NOT_FOUND`, `LOYALTY_PROGRAM_PAUSED`, `LOYALTY_MEMBER_NOT_FOUND`,
 `LOYALTY_CARD_NOT_FOUND` (token inválido o tarjeta borrada), `LOYALTY_ALREADY_REGISTERED`,
-`LOYALTY_STAMP_COOLDOWN`, `LOYALTY_NOT_ENOUGH_STAMPS`, `LOYALTY_UNDO_NOT_ALLOWED`,
+`LOYALTY_STAMP_COOLDOWN`, `LOYALTY_NOT_ENOUGH_STAMPS`, `LOYALTY_REMOVE_EXCEEDS_STAMPS`,
+`LOYALTY_REMINDERS_OPTED_OUT`,
+`LOYALTY_UNDO_NOT_ALLOWED`,
 `LOYALTY_INVALID_PHONE`, `LOYALTY_WRONG_LOCATION`, `LOYALTY_PROGRAM_ALREADY_EXISTS` (la sucursal
 ya tiene programa), `LOYALTY_PROGRAM_SLUG_ALREADY_EXISTS` y `PLAN_FEATURE_NOT_INCLUDED`.
 

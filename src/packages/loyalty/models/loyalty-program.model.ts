@@ -62,6 +62,21 @@ export class LoyaltyProgram implements Entity {
   @Prop({ required: true })
   stampCooldownMinutes!: number;
 
+  /**
+   * Plantilla del recordatorio por WhatsApp (ver `config.Reminders`). Sin valor, se usa la
+   * recomendada: asi, si mejoramos el texto recomendado, les llega a todos los que no lo cambiaron.
+   */
+  @Prop({ required: false, trim: true })
+  reminderMessage?: string;
+
+  /** Dias sin venir para recomendar el recordatorio "te extrañamos". Sin valor, `DefaultInactiveDays`. */
+  @Prop({ required: false })
+  inactiveDays?: number;
+
+  /** Plantilla del "te extrañamos". Sin valor, la recomendada (`DefaultInactiveMessage`). */
+  @Prop({ required: false, trim: true })
+  inactiveReminderMessage?: string;
+
   @Prop({
     type: LoyaltyProgramStatsSchema,
     required: true,

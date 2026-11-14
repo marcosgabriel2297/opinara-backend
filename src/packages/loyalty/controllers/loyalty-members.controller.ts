@@ -1,8 +1,8 @@
-import { Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
 
-import { BusinessAccess, GetBusiness, GetUser, RequiresFeature } from '@shared/common/decorators';
+import { BusinessAccess, GetBusiness, GetMembership, GetUser, RequiresFeature } from '@shared/common/decorators';
 import { AuthenticatedUser } from '@shared/common/interfaces';
-import { Business } from '@shared/models/business';
+import { Business, BusinessMember } from '@shared/models/business';
 import { BusinessMemberRole } from '@shared/models/enums/business';
 import { Feature } from '@shared/models/enums/plan';
 
@@ -11,7 +11,7 @@ import * as Services from '../services';
 
 /**
  * La caja. Cualquier miembro del negocio puede buscar, sumar, canjear y deshacer; borrar a un
- * cliente queda para OWNER y ADMIN.
+ * cliente queda para OWNER y ADMIN, y sacar sellos solo para ADMIN.
  */
 @Controller('businesses/:businessUrn/loyalty')
 @RequiresFeature(Feature.LOYALTY)
@@ -46,11 +46,30 @@ export class LoyaltyMembersController {
     return this.service.redeem(business, user, programUrn, memberCode);
   }
 
+  /** Correccion: saca sellos mal puestos cuando ya no se puede deshacer el sello. Solo ADMIN, ni el OWNER. */
+  @Post('/programs/:programUrn/members/:memberCode/stamp-removals')
+  @BusinessAccess(...Services.CorrectionRoles)
+  removeStamps(
+    @GetBusiness() business: Business,
+    @GetUser() user: AuthenticatedUser,
+    @Param('programUrn') programUrn: string,
+    @Param('memberCode') memberCode: string,
+    @Body() body: DTO.RemoveStamps,
+  ) {
+    return this.service.removeStamps(business, user, programUrn, memberCode, body);
+  }
+
+  /** Cualquier miembro deshace un sello o un canje; deshacer una correccion, solo ADMIN. */
   @Post('/events/:eventUrn/undo')
   @HttpCode(HttpStatus.OK)
   @BusinessAccess()
-  undo(@GetBusiness() business: Business, @GetUser() user: AuthenticatedUser, @Param('eventUrn') eventUrn: string) {
-    return this.service.undo(business, user, eventUrn);
+  undo(
+    @GetBusiness() business: Business,
+    @GetUser() user: AuthenticatedUser,
+    @GetMembership() membership: BusinessMember,
+    @Param('eventUrn') eventUrn: string,
+  ) {
+    return this.service.undo(business, user, membership, eventUrn);
   }
 
   /** Lo que lee la caja al escanear: dice de que sucursal es la tarjeta. */

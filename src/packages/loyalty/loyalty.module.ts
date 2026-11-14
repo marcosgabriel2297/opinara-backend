@@ -31,10 +31,11 @@ import * as Services from './services';
     ]),
     LocationsModule,
   ],
-  controllers: [Controllers.Programs, Controllers.Members, Controllers.Public],
+  controllers: [Controllers.Programs, Controllers.Members, Controllers.Reminders, Controllers.Public],
   providers: [
     Services.Programs,
     Services.Members,
+    Services.Reminders,
     Services.Public,
     Services.CardMailer,
     LoyaltyProgramsRepository,

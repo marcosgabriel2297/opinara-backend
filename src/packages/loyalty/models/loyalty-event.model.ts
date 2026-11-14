@@ -8,6 +8,8 @@ export const LOYALTY_EVENT_ENTITY = 'loyalty-event';
 export enum LoyaltyEventType {
   STAMP = 'STAMP',
   REDEMPTION = 'REDEMPTION',
+  /** OWNER o ADMIN saca sellos mal puestos, cuando ya no se puede deshacer el sello. */
+  STAMP_REMOVAL = 'STAMP_REMOVAL',
 }
 
 /**
@@ -35,7 +37,7 @@ export class LoyaltyEvent implements Entity {
   @Prop({ required: true, enum: LoyaltyEventType })
   type!: LoyaltyEventType;
 
-  /** Sellos que movio: 1 en un sello, los que pide el premio en un canje. */
+  /** Sellos que movio: 1 en un sello, los que pide el premio en un canje, los que se sacaron en una correccion. */
   @Prop({ required: true })
   amount!: number;
 

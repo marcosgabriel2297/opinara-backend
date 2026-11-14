@@ -18,13 +18,44 @@ export default {
     DefaultStampCooldownMinutes: 10,
     MaxStampCooldownMinutes: 24 * 60,
   },
+  /**
+   * Recordatorios por WhatsApp (los manda el local desde su WhatsApp, con un link `wa.me`). Hay dos
+   * motivos: le faltan pocos sellos y no vino hoy (`NEAR_REWARD`), o hace un tiempo que no viene
+   * (`INACTIVE`). Uno por vuelta entre los dos. No hace falta el permiso de promociones: es un aviso
+   * sobre su tarjeta.
+   */
+  Reminders: {
+    /** Se recomienda recordarle a quien le faltan 1 o 2 sellos para el premio. */
+    MaxMissingStamps: 2,
+    /** Dias sin venir para recomendar el "te extrañamos". Lo elige cada sucursal. */
+    DefaultInactiveDays: 20,
+    MinInactiveDays: 7,
+    MaxInactiveDays: 365,
+    /** Para saber que es "hoy" si el negocio no tiene zona horaria guardada. */
+    DefaultTimezone: 'America/Argentina/Buenos_Aires',
+    MessageMaxLength: 500,
+    DefaultPageSize: 20,
+    /**
+     * Lo que se puede usar en la plantilla. `{faltan}` sale como "1 sello" o "2 sellos", `{sellos}`
+     * como "2 de 5 sellos" y `{nombre}` es el primer nombre. El link de la tarjeta no es una
+     * variable: va siempre al final.
+     */
+    Placeholders: ['nombre', 'faltan', 'sellos', 'premio', 'negocio', 'sucursal'] as const,
+    /** El texto recomendado: el que se usa mientras la sucursal no escriba el suyo. Sin hablar de reseñas. */
+    DefaultMessage:
+      '¡Hola, {nombre}! Te faltan solo {faltan} en tu tarjeta de {negocio} para tu premio: {premio}. ¡Te esperamos en {sucursal}! Acá tenés tu tarjeta:',
+    /** El recomendado para el que no viene hace un tiempo. Sirve tambien para quien tiene 0 sellos. */
+    DefaultInactiveMessage:
+      '¡Hola, {nombre}! Hace rato que no te vemos por {negocio}. Te faltan {faltan} para tu premio: {premio}. ¡Te esperamos en {sucursal}! Acá tenés tu tarjeta:',
+  },
   /** Cuanto tiempo se puede deshacer la ultima accion de una tarjeta. */
   UndoWindowMs: toNumber(process.env.LOYALTY_UNDO_WINDOW_MINUTES, 15) * MINUTE_MS,
   /**
    * Version de las condiciones que acepta el cliente al darse de alta. Se guarda con el
    * consentimiento: si cambian los textos, se cambia esta fecha.
    */
-  TermsVersion: '2026-11-06',
+  // 2026-11-13: suman los avisos de la tarjeta por WhatsApp (recordatorios).
+  TermsVersion: '2026-11-13',
   Throttle: {
     /** Altas por IP: el wifi de un local puede tener varias seguidas, un bot muchas mas. */
     Register: {

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Headers, HttpCode, HttpStatus, Param, Post, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, HttpCode, HttpStatus, Param, Post, Put, Res } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Response } from 'express';
 
@@ -35,6 +35,18 @@ export class PublicLoyaltyController {
   ) {
     noStore(response);
     return this.service.deleteCard(token);
+  }
+
+  /** El cliente apaga o prende los recordatorios del local por WhatsApp. */
+  @Put('/card/reminders')
+  @Throttle(READ_THROTTLE)
+  setReminders(
+    @Headers(config.CardTokenHeader) token: string | undefined,
+    @Body() payload: DTO.SetReminders,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    noStore(response);
+    return this.service.setReminders(token, payload);
   }
 
   @Post('/card/resend')

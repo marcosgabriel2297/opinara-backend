@@ -6,7 +6,9 @@ import { EncryptedValue } from '@shared/common/crypto';
 import { DatabaseRepository } from '@shared/repositories';
 import { escapeRegex } from '@shared/utils';
 
-import { LoyaltyMember } from './loyalty-member.model';
+import { LoyaltyMember, RemindersOptOut } from './loyalty-member.model';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class LoyaltyMembersRepository extends DatabaseRepository<LoyaltyMember> {
@@ -101,6 +103,113 @@ export class LoyaltyMembersRepository extends DatabaseRepository<LoyaltyMember> 
 
   undoRedemption(businessUrn: string, urn: string, stamps: number): Promise<LoyaltyMember | null> {
     return this.updateOne({ businessUrn, urn }, { $inc: { stamps, totalRedemptions: -1 } });
+  }
+
+  /**
+   * Saca sellos mal puestos, solo si los tiene: el saldo nunca queda negativo. Es una correccion,
+   * asi que tambien baja el historico.
+   */
+  removeStamps(
+    businessUrn: string,
+    programUrn: string,
+    memberCode: string,
+    stamps: number,
+  ): Promise<LoyaltyMember | null> {
+    return this.updateOne(
+      { businessUrn, programUrn, memberCode, stamps: { $gte: stamps } },
+      { $inc: { stamps: -stamps, totalStamps: -stamps } },
+    );
+  }
+
+  undoStampRemoval(businessUrn: string, urn: string, stamps: number): Promise<LoyaltyMember | null> {
+    return this.updateOne({ businessUrn, urn }, { $inc: { stamps, totalStamps: stamps } });
+  }
+
+  /**
+   * A quienes se recomienda recordarles (ver `config.Reminders`), con dos motivos:
+   *
+   * - **Cerca del premio**: les faltan entre 1 y `maxMissing` sellos y su ultimo sello fue antes de
+   *   `today` (fecha `YYYY-MM-DD` en `timezone`: al cliente que esta en la caja no se le escribe).
+   * - **No viene**: les faltan mas (o tienen 0) y su ultima visita (el ultimo sello o, si no tiene,
+   *   el alta) fue hace `inactiveDays` dias o mas.
+   *
+   * En los dos casos: no pidieron dejar de recibirlos y no se les mando uno desde esa ultima visita
+   * (uno por vuelta, sumando los dos motivos). Los que esperan hace mas, primero.
+   */
+  async reminderCandidates(
+    businessUrn: string,
+    programs: { urn: string; stampsRequired: number; inactiveDays: number }[],
+    options: {
+      maxMissing: number;
+      today: string;
+      timezone: string;
+      now: Date;
+      reasons: { nearReward: boolean; inactive: boolean };
+      page: number;
+      limit: number;
+    },
+  ): Promise<{ items: LoyaltyMember[]; total: number }> {
+    const lastVisit = { $ifNull: ['$lastStampAt', '$createdAt'] };
+    const branches: FilterQuery<LoyaltyMember>[] = programs.flatMap((program) => {
+      const nearFrom = Math.max(1, program.stampsRequired - options.maxMissing);
+      return [
+        ...(options.reasons.nearReward
+          ? [
+              {
+                programUrn: program.urn,
+                stamps: { $gte: nearFrom, $lt: program.stampsRequired },
+                lastStampAt: { $ne: null },
+                $expr: {
+                  $lt: [
+                    { $dateToString: { format: '%Y-%m-%d', date: '$lastStampAt', timezone: options.timezone } },
+                    options.today,
+                  ],
+                },
+              },
+            ]
+          : []),
+        ...(options.reasons.inactive
+          ? [
+              {
+                programUrn: program.urn,
+                stamps: { $lt: nearFrom },
+                $expr: {
+                  $lte: [lastVisit, new Date(options.now.getTime() - program.inactiveDays * DAY_MS)],
+                },
+              },
+            ]
+          : []),
+      ];
+    });
+    if (branches.length === 0) return { items: [], total: 0 };
+
+    const filter: FilterQuery<LoyaltyMember> = {
+      businessUrn,
+      // `null` tambien matchea a los que no tienen el campo.
+      remindersOptOut: null,
+      $or: branches,
+      // Sin recordatorio (`null` o sin el campo, que en $expr ordenan antes que cualquier fecha) o
+      // con uno anterior a su ultima visita.
+      $expr: { $lt: ['$lastReminderAt', lastVisit] },
+    };
+
+    const [items, total] = await Promise.all([
+      this.find(filter, { page: options.page, limit: options.limit, sort: { lastStampAt: 'asc', createdAt: 'asc' } }),
+      this.count(filter),
+    ]);
+    return { items, total };
+  }
+
+  markReminded(businessUrn: string, urn: string, now: Date, byUserUrn: string): Promise<LoyaltyMember | null> {
+    return this.updateOne(
+      { businessUrn, urn, remindersOptOut: null },
+      { $set: { lastReminderAt: now, lastReminderByUserUrn: byUserUrn } },
+    );
+  }
+
+  /** `null` vuelve a permitir los recordatorios. */
+  setRemindersOptOut(businessUrn: string, urn: string, optOut: RemindersOptOut | null): Promise<LoyaltyMember | null> {
+    return this.updateOne({ businessUrn, urn }, { $set: { remindersOptOut: optOut } });
   }
 
   rotateToken(

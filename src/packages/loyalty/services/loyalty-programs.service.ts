@@ -28,6 +28,14 @@ export interface PublicLoyaltyProgram {
   rewardDescription: string;
   terms: string | null;
   stampCooldownMinutes: number;
+  /** La plantilla del recordatorio que se usa: la propia o, si no escribio una, la recomendada. */
+  reminderMessage: string;
+  /** `true` mientras usa el texto recomendado. */
+  reminderMessageIsDefault: boolean;
+  /** Dias sin venir para el "te extrañamos". */
+  inactiveDays: number;
+  inactiveReminderMessage: string;
+  inactiveReminderMessageIsDefault: boolean;
   stats: LoyaltyProgramStats;
   /** Lo que se imprime en el QR de alta de la sucursal. */
   signupUrl: string;
@@ -63,13 +71,8 @@ export class LoyaltyProgramsService {
   ) {}
 
   async findAll(business: Business): Promise<PublicLoyaltyProgram[]> {
-    const [programs, locations] = await Promise.all([
-      this.programsRepository.findAllForBusiness(business.urn),
-      this.locationsRepository.findAllForBusiness(business.urn),
-    ]);
-    const byUrn = new Map(locations.map((location) => [location.urn, location]));
-
-    return programs.map((program) => this.toPublic(business, program, byUrn.get(program.locationUrn) ?? null));
+    const owned = await this.findAllOwned(business.urn);
+    return owned.map(({ program, location }) => this.toPublic(business, program, location));
   }
 
   async findOne(business: Business, urn: string): Promise<PublicLoyaltyProgram> {
@@ -126,7 +129,7 @@ export class LoyaltyProgramsService {
   }
 
   /**
-   * Cambia el premio, los sellos, las condiciones, el tiempo minimo o pausa el programa. Cambiar
+   * Cambia el premio, los sellos, las condiciones, el tiempo minimo, el recordatorio o pausa el programa. Cambiar
    * `stampsRequired` rige para todas las tarjetas, tambien las que ya tienen sellos.
    */
   async update(business: Business, urn: string, payload: DTO.UpdateProgram): Promise<PublicLoyaltyProgram> {
@@ -142,6 +145,17 @@ export class LoyaltyProgramsService {
       if (payload.terms === '') unset.terms = '';
       else set.terms = payload.terms;
     }
+    // Vacio, o igual al recomendado, vuelve al recomendado: asi le llegan las mejoras que le hagamos.
+    for (const [field, recommended] of [
+      ['reminderMessage', config.Reminders.DefaultMessage],
+      ['inactiveReminderMessage', config.Reminders.DefaultInactiveMessage],
+    ] as const) {
+      const value = payload[field];
+      if (value === undefined) continue;
+      if (value === '' || value === recommended) unset[field] = '';
+      else set[field] = value;
+    }
+    if (payload.inactiveDays !== undefined) set.inactiveDays = payload.inactiveDays;
 
     const updated = await this.programsRepository.updateOne(
       { businessUrn: business.urn, urn: program.urn },
@@ -157,6 +171,17 @@ export class LoyaltyProgramsService {
     const targetUrl = config.SignupUrl(business.slug, program.slug);
 
     return { targetUrl, pngDataUrl: await renderQr(targetUrl) };
+  }
+
+  /** Todos los programas del negocio, cada uno con su sucursal. */
+  async findAllOwned(businessUrn: string): Promise<OwnedProgram[]> {
+    const [programs, locations] = await Promise.all([
+      this.programsRepository.findAllForBusiness(businessUrn),
+      this.locationsRepository.findAllForBusiness(businessUrn),
+    ]);
+    const byUrn = new Map(locations.map((location) => [location.urn, location]));
+
+    return programs.map((program) => ({ program, location: byUrn.get(program.locationUrn) ?? null }));
   }
 
   async getOwned(businessUrn: string, urn: string): Promise<OwnedProgram> {
@@ -195,6 +220,11 @@ export class LoyaltyProgramsService {
       rewardDescription: program.rewardDescription,
       terms: program.terms ?? null,
       stampCooldownMinutes: program.stampCooldownMinutes,
+      reminderMessage: program.reminderMessage ?? config.Reminders.DefaultMessage,
+      reminderMessageIsDefault: !program.reminderMessage,
+      inactiveDays: program.inactiveDays ?? config.Reminders.DefaultInactiveDays,
+      inactiveReminderMessage: program.inactiveReminderMessage ?? config.Reminders.DefaultInactiveMessage,
+      inactiveReminderMessageIsDefault: !program.inactiveReminderMessage,
       stats: program.stats,
       signupUrl: config.SignupUrl(business.slug, program.slug),
       createdAt: program.createdAt,

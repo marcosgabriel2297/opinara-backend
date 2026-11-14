@@ -4,6 +4,14 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Campaign, CampaignSchema, ScanEvent, ScanEventSchema } from '@packages/campaigns';
 import { GoogleConnection, GoogleConnectionSchema } from '@packages/google';
 import { Location, LocationSchema } from '@packages/locations';
+import {
+  LoyaltyEvent,
+  LoyaltyEventSchema,
+  LoyaltyMember,
+  LoyaltyMemberSchema,
+  LoyaltyProgram,
+  LoyaltyProgramSchema,
+} from '@packages/loyalty';
 import { Review, ReviewSchema } from '@packages/reviews';
 
 import * as Controllers from './controllers';
@@ -23,6 +31,9 @@ import * as Services from './services';
       { name: Campaign.name, schema: CampaignSchema },
       { name: ScanEvent.name, schema: ScanEventSchema },
       { name: GoogleConnection.name, schema: GoogleConnectionSchema },
+      { name: LoyaltyProgram.name, schema: LoyaltyProgramSchema },
+      { name: LoyaltyMember.name, schema: LoyaltyMemberSchema },
+      { name: LoyaltyEvent.name, schema: LoyaltyEventSchema },
     ]),
   ],
   controllers: [Controllers.Accounts, Controllers.Users, Controllers.Businesses, Controllers.Reports],
@@ -33,6 +44,8 @@ import * as Services from './services';
     Services.Stats,
     Services.Businesses,
     Services.Scans,
+    Services.Loyalty,
+    Services.LoyaltyMembers,
     Services.Audit,
     Services.Google,
     AdminsRepository,

@@ -608,6 +608,23 @@ describe('Fidelizacion: tarjeta de sellos (integracion)', () => {
       expect((await connection.collection('loyalty_members').findOne({ memberCode: code }))?.stamps).toBe(0);
     });
 
+    it('dice desde cuando se puede sumar el proximo sello, segun el tiempo minimo del programa', async () => {
+      const program = await createProgram({ stampCooldownMinutes: 30 });
+      const { code } = await signUp(program.slug);
+
+      const before = await http().get(`${base()}/members/${code}`).set('Authorization', cajero.auth).expect(200);
+      expect(before.body.nextStampAt).toBeNull();
+
+      const { body } = await stamp(program.urn, code).expect(201);
+      const { lastStampAt, nextStampAt } = body.member as { lastStampAt: string; nextStampAt: string };
+      expect(Date.parse(nextStampAt) - Date.parse(lastStampAt)).toBe(30 * 60 * 1000);
+
+      const blocked = await stamp(program.urn, code).expect(409);
+      expect(blocked.body.errorCode).toBe('LOYALTY_STAMP_COOLDOWN');
+      const after = await http().get(`${base()}/members/${code}`).set('Authorization', cajero.auth).expect(200);
+      expect(after.body.nextStampAt).toBe(nextStampAt);
+    });
+
     it('un programa pausado no suma sellos', async () => {
       const program = await createProgram();
       const { code } = await signUp(program.slug);
@@ -631,7 +648,7 @@ describe('Fidelizacion: tarjeta de sellos (integracion)', () => {
         const { body } = await stamp(program.urn, code).expect(201);
 
         const undone = await undo(body.event.urn).expect(200);
-        expect(undone.body).toMatchObject({ stamps: 0, totalStamps: 0 });
+        expect(undone.body).toMatchObject({ stamps: 0, totalStamps: 0, nextStampAt: null });
 
         const twice = await undo(body.event.urn).expect(409);
         expect(twice.body.errorCode).toBe('LOYALTY_UNDO_NOT_ALLOWED');
@@ -662,6 +679,106 @@ describe('Fidelizacion: tarjeta de sellos (integracion)', () => {
           .collection('loyalty_events')
           .updateOne({ urn: second.body.event.urn }, { $set: { createdAt: new Date(Date.now() - 16 * 60 * 1000) } });
         await undo(second.body.event.urn).expect(409);
+      });
+    });
+
+    describe('sacar sellos', () => {
+      /** Solo el ADMIN del negocio saca sellos: ni el OWNER ni el cajero. */
+      let admin: TestUser;
+
+      beforeEach(async () => {
+        admin = await registerUser(app);
+        await connection.collection('business_members').insertOne({
+          urn: `urn:business-member:admin-${Date.now()}`,
+          businessUrn: business.urn,
+          userUrn: admin.urn,
+          role: 'ADMIN',
+          status: 'ACTIVE',
+        });
+      });
+
+      const removeStamps = (programUrn: string, code: string, stamps: unknown, auth = admin.auth) =>
+        http()
+          .post(`${base()}/programs/${programUrn}/members/${code}/stamp-removals`)
+          .set('Authorization', auth)
+          .send({ stamps });
+      const undo = (eventUrn: string, auth = cajero.auth) =>
+        http().post(`${base()}/events/${eventUrn}/undo`).set('Authorization', auth);
+
+      it('el ADMIN saca sellos pasada la ventana de deshacer, y baja los contadores', async () => {
+        const program = await createProgram();
+        const { code } = await signUp(program.slug);
+        await stampTimes(program.urn, code, 3);
+        await connection
+          .collection('loyalty_events')
+          .updateMany({}, { $set: { createdAt: new Date(Date.now() - 60 * 60 * 1000) } });
+
+        const { body } = await removeStamps(program.urn, code, 2).expect(201);
+        expect(body).toMatchObject({
+          member: { stamps: 1, totalStamps: 1 },
+          event: { type: 'STAMP_REMOVAL', amount: 2 },
+          rewardReached: false,
+        });
+
+        const programs = await http().get(`${base()}/programs`).set('Authorization', owner.auth).expect(200);
+        expect(programs.body[0].stats).toMatchObject({ stamps: 1 });
+      });
+
+      it('no deja el saldo negativo y valida la cantidad', async () => {
+        const program = await createProgram();
+        const { code } = await signUp(program.slug);
+        await stamp(program.urn, code).expect(201);
+
+        const tooMany = await removeStamps(program.urn, code, 2).expect(409);
+        expect(tooMany.body.errorCode).toBe('LOYALTY_REMOVE_EXCEEDS_STAMPS');
+        await removeStamps(program.urn, code, 0).expect(400);
+        await removeStamps(program.urn, code, 'dos').expect(400);
+        expect((await connection.collection('loyalty_members').findOne({ memberCode: code }))?.stamps).toBe(1);
+      });
+
+      it('anda con el programa pausado', async () => {
+        const program = await createProgram();
+        const { code } = await signUp(program.slug);
+        await stamp(program.urn, code).expect(201);
+        await http()
+          .patch(`${base()}/programs/${program.urn}`)
+          .set('Authorization', owner.auth)
+          .send({ status: 'PAUSED' })
+          .expect(200);
+
+        await removeStamps(program.urn, code, 1).expect(201);
+      });
+
+      it('ni el OWNER ni el cajero sacan sellos ni deshacen la correccion; el ADMIN si', async () => {
+        const program = await createProgram();
+        const { code } = await signUp(program.slug);
+        await stampTimes(program.urn, code, 2);
+
+        for (const auth of [owner.auth, cajero.auth]) {
+          const denied = await removeStamps(program.urn, code, 1, auth).expect(403);
+          expect(denied.body.errorCode).toBe('BUSINESS_FORBIDDEN');
+        }
+
+        const { body } = await removeStamps(program.urn, code, 2).expect(201);
+        for (const auth of [owner.auth, cajero.auth]) {
+          const deniedUndo = await undo(body.event.urn, auth).expect(403);
+          expect(deniedUndo.body.errorCode).toBe('FORBIDDEN');
+        }
+
+        const undone = await undo(body.event.urn, admin.auth).expect(200);
+        expect(undone.body).toMatchObject({ stamps: 2, totalStamps: 2 });
+        const programs = await http().get(`${base()}/programs`).set('Authorization', owner.auth).expect(200);
+        expect(programs.body[0].stats).toMatchObject({ stamps: 2 });
+      });
+
+      it('una tarjeta de otra sucursal no se corrige desde este programa', async () => {
+        const centro = await createProgram();
+        const norte = await createProgram({ locationUrn: NORTE });
+        const { code } = await signUp(centro.slug);
+        await stamp(centro.urn, code).expect(201);
+
+        const response = await removeStamps(norte.urn, code, 1).expect(409);
+        expect(response.body.errorCode).toBe('LOYALTY_WRONG_LOCATION');
       });
     });
 
@@ -710,6 +827,276 @@ describe('Fidelizacion: tarjeta de sellos (integracion)', () => {
       await http().delete(`${base()}/members/${code}`).set('Authorization', cajero.auth).expect(403);
       await http().delete(`${base()}/members/${code}`).set('Authorization', owner.auth).expect(204);
       await http().get(`${base()}/members/${code}`).set('Authorization', owner.auth).expect(404);
+    });
+  });
+
+  describe('recordatorios', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const reminders = (auth = owner.auth, query = '') =>
+      http().get(`${base()}/reminders${query}`).set('Authorization', auth);
+    const markSent = (code: string, auth = owner.auth) =>
+      http().post(`${base()}/reminders/${code}/sent`).set('Authorization', auth);
+
+    /** Deja la tarjeta con `stamps` sellos y el ultimo puesto hace `daysAgo` dias. */
+    const setCard = (code: string, stamps: number, daysAgo: number) =>
+      connection
+        .collection('loyalty_members')
+        .updateOne({ memberCode: code }, { $set: { stamps, lastStampAt: new Date(Date.now() - daysAgo * DAY_MS) } });
+
+    it('recomienda a quien le faltan 1 o 2 sellos y no vino hoy, haya aceptado promociones o no', async () => {
+      const program = await createProgram();
+      const ana = await signUp(program.slug, { name: 'Ana María', phone: '11 2345-0001', marketing: true });
+      const sinPromos = await signUp(program.slug, { name: 'Bruno', phone: '11 2345-0002' });
+      const hoy = await signUp(program.slug, { name: 'Caro', phone: '11 2345-0003' });
+      const lejos = await signUp(program.slug, { name: 'Dani', phone: '11 2345-0004' });
+      const conPremio = await signUp(program.slug, { name: 'Eva', phone: '11 2345-0005' });
+      await setCard(ana.code, 3, 3);
+      await setCard(sinPromos.code, 4, 2);
+      await setCard(hoy.code, 4, 0);
+      await setCard(lejos.code, 1, 2);
+      await setCard(conPremio.code, 5, 2);
+
+      const { body } = await reminders().expect(200);
+      const businessName = (await connection.collection('businesses').findOne({ urn: business.urn }))?.name as string;
+
+      // Los que esperan hace mas, primero.
+      expect(body.items.map((item: { member: { memberCode: string } }) => item.member.memberCode)).toEqual([
+        ana.code,
+        sinPromos.code,
+      ]);
+      expect(body.items[0]).toMatchObject({
+        member: { memberCode: ana.code, stamps: 3, lastReminderAt: null },
+        program: { urn: program.urn, locationTitle: 'Sucursal Centro' },
+        missingStamps: 2,
+      });
+      expect(body.items[0].message).toBe(
+        `¡Hola, Ana! Te faltan solo 2 sellos en tu tarjeta de ${businessName} para tu premio: Un café gratis. ¡Te esperamos en Sucursal Centro! Acá tenés tu tarjeta:\nhttps://app.opinara.test/card#token=${ana.token}`,
+      );
+      expect(body.items[0].message).not.toMatch(/reseña/i);
+      expect(body.items[1]).toMatchObject({ member: { marketing: false }, missingStamps: 1 });
+    }, 20000);
+
+    it('al marcarlo enviado deja de recomendarlo, hasta su proximo sello', async () => {
+      const program = await createProgram();
+      const { code } = await signUp(program.slug, { marketing: true });
+      await setCard(code, 4, 1);
+
+      await markSent(code).expect(204);
+      expect((await reminders().expect(200)).body.total).toBe(0);
+      const member = await http().get(`${base()}/members/${code}`).set('Authorization', owner.auth).expect(200);
+      expect(member.body.lastReminderAt).toEqual(expect.any(String));
+
+      // Le recordaron hace 3 dias y volvio a sumar ayer: se le puede recordar de nuevo.
+      await connection
+        .collection('loyalty_members')
+        .updateOne({ memberCode: code }, { $set: { lastReminderAt: new Date(Date.now() - 3 * DAY_MS) } });
+      await setCard(code, 3, 1);
+      expect((await reminders().expect(200)).body.total).toBe(1);
+    });
+
+    it('se puede marcar enviado aunque no haya aceptado promociones', async () => {
+      const program = await createProgram();
+      const { code } = await signUp(program.slug);
+
+      await markSent(code).expect(204);
+      await markSent('ZZZZZZ').expect(404);
+    });
+
+    it('usa la plantilla de la sucursal; vacia vuelve a la recomendada', async () => {
+      const program = await createProgram({ stampsRequired: 2 });
+      const { code } = await signUp(program.slug, { marketing: true });
+      await setCard(code, 1, 3);
+      const patch = (reminderMessage: string) =>
+        http().patch(`${base()}/programs/${program.urn}`).set('Authorization', owner.auth).send({ reminderMessage });
+
+      const custom = await patch('{nombre}, te falta {faltan} para {premio} en {sucursal}. {negocio}').expect(200);
+      expect(custom.body).toMatchObject({ reminderMessageIsDefault: false });
+      const { body } = await reminders().expect(200);
+      expect(body.items[0].message).toMatch(
+        /^Ana, te falta 1 sello para Un café gratis en Sucursal Centro\. .+\nhttps:\/\/app\.opinara\.test\/card#token=/,
+      );
+
+      const invalid = await patch('Hola {apellido}').expect(400);
+      expect(invalid.body.errorCode).toBe('BAD_REQUEST');
+
+      const reset = await patch('').expect(200);
+      expect(reset.body).toMatchObject({
+        reminderMessageIsDefault: true,
+        reminderMessage: expect.stringMatching(/^¡Hola, \{nombre\}!/),
+      });
+    });
+
+    it('no incluye sucursales pausadas y filtra por programa', async () => {
+      const centro = await createProgram();
+      const norte = await createProgram({ locationUrn: NORTE });
+      const enCentro = await signUp(centro.slug, { marketing: true });
+      const enNorte = await signUp(norte.slug, { marketing: true });
+      await setCard(enCentro.code, 4, 1);
+      await setCard(enNorte.code, 4, 1);
+
+      const filtered = await reminders(owner.auth, `?programUrn=${norte.urn}`).expect(200);
+      expect(filtered.body.items.map((item: { member: { memberCode: string } }) => item.member.memberCode)).toEqual([
+        enNorte.code,
+      ]);
+
+      await http()
+        .patch(`${base()}/programs/${norte.urn}`)
+        .set('Authorization', owner.auth)
+        .send({ status: 'PAUSED' })
+        .expect(200);
+      const all = await reminders().expect(200);
+      expect(all.body.items.map((item: { member: { memberCode: string } }) => item.member.memberCode)).toEqual([
+        enCentro.code,
+      ]);
+    });
+
+    it('solo OWNER y ADMIN ven y marcan recordatorios', async () => {
+      const program = await createProgram();
+      const { code } = await signUp(program.slug, { marketing: true });
+
+      await reminders(cajero.auth).expect(403);
+      await markSent(code, cajero.auth).expect(403);
+      await http()
+        .put(`${base()}/members/${code}/reminders`)
+        .set('Authorization', cajero.auth)
+        .send({ enabled: false })
+        .expect(403);
+    });
+
+    describe('hace mucho que no viene', () => {
+      /** Deja la tarjeta con `stamps` sellos, el alta hace `joinedDaysAgo` dias y el ultimo sello hace `daysAgo` (o ninguno). */
+      const setVisit = (code: string, stamps: number, joinedDaysAgo: number, daysAgo: number | null) =>
+        connection.collection('loyalty_members').updateOne(
+          { memberCode: code },
+          {
+            $set: {
+              stamps,
+              createdAt: new Date(Date.now() - joinedDaysAgo * DAY_MS),
+              lastStampAt: daysAgo === null ? null : new Date(Date.now() - daysAgo * DAY_MS),
+            },
+          },
+        );
+      const codesOf = (body: { items: { member: { memberCode: string } }[] }) =>
+        body.items.map((item) => item.member.memberCode);
+
+      it('recomienda a quien no viene hace 20 dias o no estreno la tarjeta; si esta cerca del premio, gana ese motivo', async () => {
+        const program = await createProgram();
+        const ana = await signUp(program.slug, { name: 'Ana', phone: '11 2345-0001' });
+        const nunca = await signUp(program.slug, { name: 'Bruno', phone: '11 2345-0002' });
+        const reciente = await signUp(program.slug, { name: 'Caro', phone: '11 2345-0003' });
+        const cerca = await signUp(program.slug, { name: 'Dani', phone: '11 2345-0004' });
+        await setVisit(ana.code, 1, 60, 25);
+        await setVisit(nunca.code, 0, 30, null);
+        await setVisit(reciente.code, 1, 60, 10);
+        await setVisit(cerca.code, 3, 60, 25);
+
+        const { body } = await reminders().expect(200);
+        const businessName = (await connection.collection('businesses').findOne({ urn: business.urn }))?.name as string;
+
+        expect(codesOf(body).sort()).toEqual([ana.code, nunca.code, cerca.code].sort());
+        const byCode = new Map(
+          body.items.map((item: { member: { memberCode: string } }) => [item.member.memberCode, item]),
+        );
+        expect(byCode.get(ana.code)).toMatchObject({ reason: 'INACTIVE', missingStamps: 4, daysSinceVisit: 25 });
+        expect(byCode.get(nunca.code)).toMatchObject({ reason: 'INACTIVE', missingStamps: 5, daysSinceVisit: 30 });
+        expect(byCode.get(cerca.code)).toMatchObject({ reason: 'NEAR_REWARD', missingStamps: 2 });
+        expect((byCode.get(ana.code) as { message: string }).message).toBe(
+          `¡Hola, Ana! Hace rato que no te vemos por ${businessName}. Te faltan 4 sellos para tu premio: Un café gratis. ¡Te esperamos en Sucursal Centro! Acá tenés tu tarjeta:\nhttps://app.opinara.test/card#token=${ana.token}`,
+        );
+
+        const inactive = await reminders(owner.auth, '?reason=INACTIVE').expect(200);
+        expect(codesOf(inactive.body).sort()).toEqual([ana.code, nunca.code].sort());
+        const near = await reminders(owner.auth, '?reason=NEAR_REWARD').expect(200);
+        expect(codesOf(near.body)).toEqual([cerca.code]);
+        await reminders(owner.auth, '?reason=OTRO').expect(400);
+      }, 20000);
+
+      it('cada sucursal elige los dias y su mensaje; uno por vuelta', async () => {
+        const program = await createProgram();
+        const { code } = await signUp(program.slug);
+        await setVisit(code, 1, 60, 10);
+        const patch = (payload: Record<string, unknown>) =>
+          http().patch(`${base()}/programs/${program.urn}`).set('Authorization', owner.auth).send(payload);
+
+        expect((await reminders().expect(200)).body.total).toBe(0);
+        const updated = await patch({ inactiveDays: 7, inactiveReminderMessage: '{nombre}, tenés {sellos}.' }).expect(
+          200,
+        );
+        expect(updated.body).toMatchObject({ inactiveDays: 7, inactiveReminderMessageIsDefault: false });
+
+        const { body } = await reminders().expect(200);
+        expect(body.items[0].message).toMatch(/^Ana, tenés 1 de 5 sellos\.\nhttps:/);
+
+        await markSent(code).expect(204);
+        expect((await reminders().expect(200)).body.total).toBe(0);
+
+        await patch({ inactiveDays: 3 }).expect(400);
+        const reset = await patch({ inactiveReminderMessage: '' }).expect(200);
+        expect(reset.body).toMatchObject({ inactiveReminderMessageIsDefault: true, inactiveDays: 7 });
+      }, 15000);
+
+      it('un programa nuevo arranca con 20 dias y los mensajes recomendados', async () => {
+        const program = await createProgram();
+        const { body } = await http()
+          .get(`${base()}/programs/${program.urn}`)
+          .set('Authorization', owner.auth)
+          .expect(200);
+
+        expect(body).toMatchObject({
+          inactiveDays: 20,
+          reminderMessageIsDefault: true,
+          inactiveReminderMessageIsDefault: true,
+          inactiveReminderMessage: expect.stringMatching(/^¡Hola, \{nombre\}! Hace rato/),
+        });
+      });
+    });
+
+    describe('no recibir mas', () => {
+      const setFromCard = (token: string, enabled: unknown) =>
+        http().put('/api/public/loyalty/card/reminders').set(TOKEN_HEADER, token).send({ enabled });
+      const setFromBusiness = (code: string, enabled: unknown) =>
+        http().put(`${base()}/members/${code}/reminders`).set('Authorization', owner.auth).send({ enabled });
+
+      it('el cliente los apaga desde su tarjeta: sale de la lista, no se puede marcar y el local no los prende', async () => {
+        const program = await createProgram();
+        const { token, code } = await signUp(program.slug);
+        await setCard(code, 4, 1);
+
+        const before = await http().get('/api/public/loyalty/card').set(TOKEN_HEADER, token).expect(200);
+        expect(before.body.member.remindersEnabled).toBe(true);
+
+        expect((await setFromCard(token, false).expect(200)).body).toEqual({ remindersEnabled: false });
+        expect((await reminders().expect(200)).body.total).toBe(0);
+        const sent = await markSent(code).expect(409);
+        expect(sent.body.errorCode).toBe('LOYALTY_REMINDERS_OPTED_OUT');
+        const member = await http().get(`${base()}/members/${code}`).set('Authorization', owner.auth).expect(200);
+        expect(member.body.remindersOptOutBy).toBe('CLIENT');
+
+        const reenable = await setFromBusiness(code, true).expect(409);
+        expect(reenable.body.errorCode).toBe('LOYALTY_REMINDERS_OPTED_OUT');
+
+        await setFromCard(token, true).expect(200);
+        expect((await reminders().expect(200)).body.total).toBe(1);
+      }, 15000);
+
+      it('el local lo saca cuando el cliente se lo pide, y lo puede volver a sumar', async () => {
+        const program = await createProgram();
+        const { token, code } = await signUp(program.slug);
+        await setCard(code, 4, 1);
+
+        const off = await setFromBusiness(code, false).expect(200);
+        expect(off.body).toMatchObject({ memberCode: code, remindersOptOutBy: 'BUSINESS' });
+        expect((await reminders().expect(200)).body.total).toBe(0);
+        const card = await http().get('/api/public/loyalty/card').set(TOKEN_HEADER, token).expect(200);
+        expect(card.body.member.remindersEnabled).toBe(false);
+
+        const on = await setFromBusiness(code, true).expect(200);
+        expect(on.body.remindersOptOutBy).toBeNull();
+        expect((await reminders().expect(200)).body.total).toBe(1);
+
+        await setFromBusiness(code, 'no').expect(400);
+        await setFromCard('token-que-no-existe-0000000000000000000000', false).expect(404);
+      }, 15000);
     });
   });
 });

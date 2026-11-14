@@ -5,7 +5,8 @@ import { Errors } from '@shared/common/errors';
 import { Exceptions } from '@shared/common/exceptions';
 import { AuthenticatedUser, Paginated, paginate } from '@shared/common/interfaces';
 import { Urn } from '@shared/common/urn';
-import { Business } from '@shared/models/business';
+import { Business, BusinessMember } from '@shared/models/business';
+import { BusinessMemberRole } from '@shared/models/enums/business';
 
 import config from '../config';
 import * as DTO from '../dtos';
@@ -17,12 +18,23 @@ import {
   LoyaltyMember,
   LoyaltyMembersRepository,
   LoyaltyProgram,
+  RemindersOptOutBy,
 } from '../models';
 import { MEMBER_CODE_PATTERN, generateCardToken, hashCardToken } from '../utils';
 import { LoyaltyCardMailer } from './loyalty-card-mailer.service';
 import { LoyaltyProgramsService, OwnedProgram, isOperable, renderQr } from './loyalty-programs.service';
 
 const MINUTE_MS = 60 * 1000;
+
+/** Quienes pueden sacar sellos (y deshacer esa correccion): solo ADMIN, a pedido del negocio; ni el OWNER. */
+export const CORRECTION_ROLES: readonly BusinessMemberRole[] = [BusinessMemberRole.ADMIN];
+
+/** Como vuelven los contadores del programa al deshacer cada accion. */
+const STATS_REVERSAL: Record<LoyaltyEventType, (amount: number) => { stamps?: number; redemptions?: number }> = {
+  [LoyaltyEventType.STAMP]: () => ({ stamps: -1 }),
+  [LoyaltyEventType.REDEMPTION]: () => ({ redemptions: -1 }),
+  [LoyaltyEventType.STAMP_REMOVAL]: (amount) => ({ stamps: amount }),
+};
 
 /** El cliente como lo ve la caja. */
 export interface StaffLoyaltyMember {
@@ -38,6 +50,16 @@ export interface StaffLoyaltyMember {
   totalStamps: number;
   totalRedemptions: number;
   lastStampAt: Date | null;
+  /**
+   * Desde cuando se puede sumar el proximo sello (`lastStampAt` + tiempo minimo del programa), para
+   * que la caja lo muestre. `null` si nunca recibio uno o se deshizo el ultimo. Puede estar en el
+   * pasado: entonces ya se puede.
+   */
+  nextStampAt: Date | null;
+  /** Cuando se abrio WhatsApp para mandarle el ultimo recordatorio. */
+  lastReminderAt: Date | null;
+  /** Si pidio no recibir recordatorios, quien lo apago. `null`: se le pueden mandar. */
+  remindersOptOutBy: RemindersOptOutBy | null;
   marketing: boolean;
   createdAt?: Date;
 }
@@ -63,7 +85,7 @@ export interface LoyaltyActionResult {
   rewardReached: boolean;
 }
 
-/** Lo que pasa en la caja: buscar, sumar sellos, canjear y deshacer. */
+/** Lo que pasa en la caja: buscar, sumar sellos, canjear, corregir y deshacer. */
 @Injectable()
 export class LoyaltyMembersService {
   private readonly logger = new Logger(LoyaltyMembersService.name);
@@ -179,10 +201,42 @@ export class LoyaltyMembersService {
   }
 
   /**
+   * Correccion del ADMIN (solo ese rol): saca sellos mal puestos cuando ya no se puede deshacer el sello
+   * (paso la ventana o la caja ya cerro la tarjeta). Queda en el historial y se puede deshacer como
+   * cualquier otra accion. Anda aunque el programa este pausado: corregir no es operar la caja.
+   */
+  async removeStamps(
+    business: Business,
+    user: AuthenticatedUser,
+    programUrn: string,
+    memberCode: string,
+    { stamps }: DTO.RemoveStamps,
+  ): Promise<LoyaltyActionResult> {
+    const owned = await this.programsService.getOwned(business.urn, programUrn);
+    const { program } = owned;
+    const member = await this.getInProgram(business.urn, program, memberCode);
+
+    const updated = await this.membersRepository.removeStamps(business.urn, program.urn, member.memberCode, stamps);
+    if (!updated) {
+      return Exceptions.conflict(Errors.LOYALTY_REMOVE_EXCEEDS_STAMPS);
+    }
+
+    const event = await this.recordEvent(business, user, owned, updated, LoyaltyEventType.STAMP_REMOVAL, stamps);
+    await this.programsService.increment(business.urn, program.urn, { stamps: -stamps });
+
+    return { member: this.toStaff(updated, program), event, rewardReached: false };
+  }
+
+  /**
    * Deshace la ultima accion de una tarjeta, dentro de la ventana. Solo la ultima: deshacer un sello
    * viejo despues de un canje dejaria el saldo sin sentido.
    */
-  async undo(business: Business, user: AuthenticatedUser, eventUrn: string): Promise<StaffLoyaltyMember> {
+  async undo(
+    business: Business,
+    user: AuthenticatedUser,
+    membership: BusinessMember,
+    eventUrn: string,
+  ): Promise<StaffLoyaltyMember> {
     if (!Urn.isValid(eventUrn, LOYALTY_EVENT_ENTITY)) {
       return Exceptions.notFound(Errors.NOT_FOUND);
     }
@@ -198,26 +252,23 @@ export class LoyaltyMembersService {
     if (event.undoneAt || expired || latest?.urn !== event.urn) {
       return Exceptions.conflict(Errors.LOYALTY_UNDO_NOT_ALLOWED);
     }
+    // Si un cajero pudiera deshacer la correccion, devolveria los sellos que saco el dueño.
+    if (event.type === LoyaltyEventType.STAMP_REMOVAL && !CORRECTION_ROLES.includes(membership.role)) {
+      return Exceptions.forbidden(Errors.FORBIDDEN);
+    }
 
     // Primero se marca el evento: si dos cajas deshacen a la vez, solo una llega a revertir el saldo.
     if (!(await this.eventsRepository.markUndone(business.urn, event.urn, user.urn, now))) {
       return Exceptions.conflict(Errors.LOYALTY_UNDO_NOT_ALLOWED);
     }
 
-    const reverted =
-      event.type === LoyaltyEventType.STAMP
-        ? await this.membersRepository.undoStamp(business.urn, event.memberUrn)
-        : await this.membersRepository.undoRedemption(business.urn, event.memberUrn, event.amount);
+    const reverted = await this.revert(business.urn, event);
     if (!reverted) {
       // El cliente borro sus datos en el medio: no hay saldo que revertir.
       return Exceptions.notFound(Errors.LOYALTY_MEMBER_NOT_FOUND);
     }
 
-    await this.programsService.increment(
-      business.urn,
-      event.programUrn,
-      event.type === LoyaltyEventType.STAMP ? { stamps: -1 } : { redemptions: -1 },
-    );
+    await this.programsService.increment(business.urn, event.programUrn, STATS_REVERSAL[event.type](event.amount));
 
     const { program } = await this.programsService.getOwned(business.urn, event.programUrn);
     return this.toStaff(reverted, program);
@@ -257,6 +308,17 @@ export class LoyaltyMembersService {
     const member = await this.getByCode(business.urn, memberCode);
     if (await this.membersRepository.deleteForBusiness(business.urn, member.urn)) {
       await this.programsService.increment(business.urn, member.programUrn, { members: -1 });
+    }
+  }
+
+  private revert(businessUrn: string, event: LoyaltyEvent): Promise<LoyaltyMember | null> {
+    switch (event.type) {
+      case LoyaltyEventType.STAMP:
+        return this.membersRepository.undoStamp(businessUrn, event.memberUrn);
+      case LoyaltyEventType.REDEMPTION:
+        return this.membersRepository.undoRedemption(businessUrn, event.memberUrn, event.amount);
+      case LoyaltyEventType.STAMP_REMOVAL:
+        return this.membersRepository.undoStampRemoval(businessUrn, event.memberUrn, event.amount);
     }
   }
 
@@ -326,21 +388,31 @@ export class LoyaltyMembersService {
   }
 
   private toStaff(member: LoyaltyMember, program: LoyaltyProgram): StaffLoyaltyMember {
-    return {
-      urn: member.urn,
-      memberCode: member.memberCode,
-      programUrn: member.programUrn,
-      name: member.name,
-      phone: member.phone,
-      email: member.email ?? null,
-      stamps: member.stamps,
-      stampsRequired: program.stampsRequired,
-      rewardAvailable: member.stamps >= program.stampsRequired,
-      totalStamps: member.totalStamps,
-      totalRedemptions: member.totalRedemptions,
-      lastStampAt: member.lastStampAt ?? null,
-      marketing: member.consent.marketing,
-      createdAt: member.createdAt,
-    };
+    return toStaffMember(member, program);
   }
+}
+
+/** El cliente como lo ve el local (la caja, la lista y los recordatorios). */
+export function toStaffMember(member: LoyaltyMember, program: LoyaltyProgram): StaffLoyaltyMember {
+  return {
+    urn: member.urn,
+    memberCode: member.memberCode,
+    programUrn: member.programUrn,
+    name: member.name,
+    phone: member.phone,
+    email: member.email ?? null,
+    stamps: member.stamps,
+    stampsRequired: program.stampsRequired,
+    rewardAvailable: member.stamps >= program.stampsRequired,
+    totalStamps: member.totalStamps,
+    totalRedemptions: member.totalRedemptions,
+    lastStampAt: member.lastStampAt ?? null,
+    nextStampAt: member.lastStampAt
+      ? new Date(member.lastStampAt.getTime() + program.stampCooldownMinutes * MINUTE_MS)
+      : null,
+    lastReminderAt: member.lastReminderAt ?? null,
+    remindersOptOutBy: member.remindersOptOut?.by ?? null,
+    marketing: member.consent.marketing,
+    createdAt: member.createdAt,
+  };
 }

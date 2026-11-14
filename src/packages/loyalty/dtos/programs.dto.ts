@@ -6,6 +6,9 @@ import { LoyaltyProgramStatus } from '../models';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
+/** Texto libre en el que cada `{...}` es una de las variables de `config.Reminders.Placeholders`. */
+export const REMINDER_MESSAGE_PATTERN = new RegExp(`^(?:[^{}]|\\{(?:${config.Reminders.Placeholders.join('|')})\\})*$`);
+
 export class CreateLoyaltyProgramDto {
   /** Un programa por sucursal. */
   @IsString()
@@ -76,4 +79,30 @@ export class UpdateLoyaltyProgramDto {
   @Min(1)
   @Max(config.Program.MaxStampCooldownMinutes)
   stampCooldownMinutes?: number;
+
+  /** Plantilla del recordatorio por WhatsApp. Vacio vuelve al texto recomendado. */
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(config.Reminders.MessageMaxLength)
+  @Matches(REMINDER_MESSAGE_PATTERN, {
+    message: `reminderMessage can only use these placeholders: ${config.Reminders.Placeholders.map((name) => `{${name}}`).join(', ')}`,
+  })
+  reminderMessage?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(config.Reminders.MinInactiveDays)
+  @Max(config.Reminders.MaxInactiveDays)
+  inactiveDays?: number;
+
+  /** Plantilla del "te extrañamos". Vacio vuelve al texto recomendado. */
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(config.Reminders.MessageMaxLength)
+  @Matches(REMINDER_MESSAGE_PATTERN, {
+    message: `inactiveReminderMessage can only use these placeholders: ${config.Reminders.Placeholders.map((name) => `{${name}}`).join(', ')}`,
+  })
+  inactiveReminderMessage?: string;
 }

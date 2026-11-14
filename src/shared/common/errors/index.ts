@@ -84,7 +84,9 @@ export enum Errors {
   LOYALTY_WRONG_LOCATION = 'LOYALTY_WRONG_LOCATION',
   LOYALTY_STAMP_COOLDOWN = 'LOYALTY_STAMP_COOLDOWN',
   LOYALTY_NOT_ENOUGH_STAMPS = 'LOYALTY_NOT_ENOUGH_STAMPS',
+  LOYALTY_REMOVE_EXCEEDS_STAMPS = 'LOYALTY_REMOVE_EXCEEDS_STAMPS',
   LOYALTY_UNDO_NOT_ALLOWED = 'LOYALTY_UNDO_NOT_ALLOWED',
+  LOYALTY_REMINDERS_OPTED_OUT = 'LOYALTY_REMINDERS_OPTED_OUT',
 }
 
 export const ErrorMessages: Record<Errors, string> = {
@@ -164,5 +166,7 @@ export const ErrorMessages: Record<Errors, string> = {
   [Errors.LOYALTY_WRONG_LOCATION]: 'The card belongs to another location',
   [Errors.LOYALTY_STAMP_COOLDOWN]: 'The card got a stamp a moment ago, wait before adding another',
   [Errors.LOYALTY_NOT_ENOUGH_STAMPS]: 'The card does not have enough stamps for the reward',
+  [Errors.LOYALTY_REMOVE_EXCEEDS_STAMPS]: 'The card does not have that many stamps to remove',
+  [Errors.LOYALTY_REMINDERS_OPTED_OUT]: 'The client asked not to receive WhatsApp reminders',
   [Errors.LOYALTY_UNDO_NOT_ALLOWED]: 'Only the latest action of the card can be undone, within a few minutes',
 };

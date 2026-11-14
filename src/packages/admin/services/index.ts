@@ -14,3 +14,7 @@ export { AdminAuditService as Audit } from './admin-audit.service';
 export type { AuditTarget } from './admin-audit.service';
 export { AdminGoogleService as Google } from './admin-google.service';
 export type { GoogleHealth, GoogleIssue } from './admin-google.service';
+export { AdminLoyaltyService as Loyalty } from './admin-loyalty.service';
+export type { LoyaltyRankingRow, LoyaltyReport } from './admin-loyalty.service';
+export { AdminLoyaltyMembersService as LoyaltyMembers } from './admin-loyalty-members.service';
+export type { AdminLoyaltyEvent, AdminLoyaltyMember, AdminLoyaltyMemberDetail } from './admin-loyalty-members.service';
